@@ -15,7 +15,7 @@ triggers:
   - nebo marketplace
 metadata:
   author: neboloop
-  version: "3.0.0"
+  version: "0.2.0"
 ---
 # NeboLoop — From Idea to Marketplace
 
