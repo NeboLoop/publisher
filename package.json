@@ -1,6 +1,6 @@
 {
   "name": "@neboai/publisher",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Build, validate, and publish artifacts to the NeboLoop marketplace",
   "license": "Apache-2.0",
   "repository": {

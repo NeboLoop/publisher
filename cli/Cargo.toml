@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "CLI for publishing to the NeboLoop marketplace"
 license = "Apache-2.0"
-repository = "https://github.com/neboloop/neboai"
+repository = "https://github.com/NeboLoop/publisher"
 
 [[bin]]
 name = "neboai"
