@@ -67,93 +67,38 @@ How to architect, design, and build Nebo apps — agents with dedicated UIs that
 
 ### SDK Setup
 
+```bash
+pnpm add @neboai/app-sdk
+```
+
+Or use the global build (no bundler needed):
+
+```html
+<script src="https://unpkg.com/@neboai/app-sdk/dist/nebo.global.js"></script>
+```
+
 ```typescript
 import { nebo } from '@neboai/app-sdk';
 ```
 
-The SDK provides:
+### Complete SDK API
 
-| API | Use For |
-|-----|---------|
-| `nebo.identity.get()` | Agent ID, name, version |
-| `nebo.storage.setItem/getItem` | Simple KV persistence |
-| `nebo.chat.mount(el, opts)` | Embed chat panel |
-| `nebo.chat.send(msg)` | Programmatically send to agent |
-| `nebo.agents.invoke(prompt)` | One-shot agent call (returns text) |
-| `nebo.agents.stream(prompt)` | Streaming agent call |
-| `nebo.janus.complete(opts)` | Direct LLM call (no persona) |
-| `nebo.fetch(path, opts)` | HTTP to sidecar (relative) or external (absolute) |
-| `surfaces.on(event, handler)` | React to agent state changes |
+#### `nebo.configure(options)`
 
-### UI Principles
-
-1. **Dark theme default.** Nebo's shell is dark. Match it.
-2. **No heavy frameworks required.** Vanilla JS works great. React/Vue/Svelte if you want.
-3. **Responsive to window resize.** Users drag the window — handle it.
-4. **Loading states.** Show skeleton/spinner while sidecar responds.
-5. **Error states.** Show clear messages when things fail. Don't blank screen.
-
-### Chat Integration
-
-The chat panel is your agent's voice. Integrate it naturally:
+Override auto-detected app ID and base URL:
 
 ```typescript
-// Mount chat in a sidebar
-nebo.chat.mount(document.getElementById('chat'), {
-  placeholder: 'Ask about your deals...',
-  theme: 'dark',
-  contextId: currentView.id,  // Scopes conversation to current context
-});
-
-// Trigger agent from UI actions
-document.getElementById('analyze-btn').onclick = () => {
-  nebo.chat.send(`Analyze deal ${currentDeal.id} and flag risks`);
-};
+nebo.configure({ appId: 'my-app', baseUrl: 'http://localhost:27895' });
 ```
 
-**contextId** scopes conversations. Different contexts = different chat histories. Use this for:
-- Per-document conversations
-- Per-project analysis
-- Per-view states
+Auto-detection works in most cases — only use this for custom setups.
 
-### State Management with Surfaces
+#### `nebo.fetch(input, init?)`
 
-Listen for agent-pushed state:
+Drop-in replacement for `window.fetch` with auto-routing:
 
 ```typescript
-import { surfaces } from '@neboai/app-sdk';
-
-surfaces.connect();
-
-// Full state replacement
-surfaces.on('state_snapshot', (e) => {
-  appState = e.snapshot;
-  render();
-});
-
-// Incremental updates (RFC 6902 JSON Patch)
-surfaces.on('state_delta', (e) => {
-  // Auto-applied to surfaces.state
-  render();
-});
-
-// Agent created a new UI surface
-surfaces.on('surface_create', (e) => {
-  console.log('New surface:', e.surfaceId, e.components);
-});
-```
-
-**Pattern:** Agent does work → pushes state via snapshot/delta → frontend re-renders.
-
-This means the agent can update your UI without the user asking. Useful for:
-- Background processing completion
-- Real-time data updates
-- Multi-step workflow progress
-
-### Using nebo.fetch for Sidecar Communication
-
-```typescript
-// All relative URLs go to your sidecar
+// Relative URLs → your sidecar API
 const deals = await nebo.fetch('/deals').then(r => r.json());
 
 // POST with body
@@ -163,10 +108,245 @@ const newDeal = await nebo.fetch('/deals', {
   body: JSON.stringify({ name: 'Oak Street Property', amount: 450000 })
 }).then(r => r.json());
 
-// Absolute URLs go through Nebo's CORS-free proxy
+// Absolute URLs → Nebo's CORS-free proxy
 const weather = await nebo.fetch('https://api.weather.gov/points/40,-74')
   .then(r => r.json());
 ```
+
+#### `nebo.WebSocket(path?)`
+
+Auto-reconnecting WebSocket with exponential backoff (1s → 30s max):
+
+```typescript
+const ws = new nebo.WebSocket('/events');
+
+ws.onopen = () => console.log('Connected');
+ws.onmessage = (e) => console.log('Data:', e.data);
+ws.onerror = (e) => console.error('Error:', e);
+ws.onclose = (e) => console.log('Closed:', e.code);
+
+ws.send(JSON.stringify({ subscribe: 'deals' }));
+ws.close();
+```
+
+Reconnects automatically on disconnect — no manual retry logic needed.
+
+#### `nebo.storage`
+
+Server-persisted async key-value store (like `localStorage` but async and persistent):
+
+```typescript
+await nebo.storage.setItem('preferences', { theme: 'dark', currency: 'USD' });
+const prefs = await nebo.storage.getItem('preferences');
+await nebo.storage.removeItem('preferences');
+const allKeys = await nebo.storage.keys();
+await nebo.storage.clear();
+```
+
+#### `nebo.agents`
+
+Invoke the app's agent programmatically:
+
+```typescript
+// One-shot call — returns full response
+const { text, tools } = await nebo.agents.invoke('Summarize my open deals');
+
+// With options
+const response = await nebo.agents.invoke('Analyze this quarter', {
+  agent: 'analyst',                    // Specific agent (optional)
+  data: { quarter: 'Q2', year: 2026 } // Context data (optional)
+});
+
+// Streaming — yields chunks as they arrive
+for await (const chunk of nebo.agents.stream('Write a detailed report')) {
+  document.getElementById('output').textContent += chunk.text;
+  if (chunk.done) console.log('Complete');
+}
+```
+
+#### `nebo.janus`
+
+Direct LLM completion (no agent persona, no skills — raw model access):
+
+```typescript
+// One-shot
+const answer = await nebo.janus.complete({
+  messages: [
+    { role: 'system', content: 'You are a financial analyst.' },
+    { role: 'user', content: 'Summarize this data...' }
+  ],
+  model: 'claude-sonnet-4-6',  // Optional
+  max_tokens: 1024              // Optional
+});
+
+// Streaming
+for await (const text of nebo.janus.stream({
+  messages: [{ role: 'user', content: 'Explain DCF valuation' }]
+})) {
+  output.textContent += text;
+}
+```
+
+#### `nebo.chat`
+
+Embed a full chat UI panel via iframe:
+
+```typescript
+// Mount chat in a container
+nebo.chat.mount(document.getElementById('chat-panel'), {
+  placeholder: 'Ask about your deals...',
+  theme: 'dark',          // 'auto' | 'light' | 'dark'
+  height: '100%',         // CSS height
+  borderless: true,       // No border on iframe
+  contextId: currentView, // Scope conversation to context
+  scope: 'read',          // Tool scope from agent.json
+});
+
+// Programmatically send a message
+nebo.chat.send('Analyze deal #42 and flag risks');
+
+// Listen for chat events
+const unsub = nebo.chat.onMessage((msg) => {
+  console.log('Chat event:', msg.type, msg.text);
+});
+
+// Update app context (agent sees this in its next turn)
+nebo.chat.setContext({
+  route: '/deals/42',
+  displayedDoc: { filename: 'terms.pdf', documentId: 'doc-123' },
+  attachedDocuments: [{ filename: 'comps.xlsx', documentId: 'doc-456' }],
+});
+
+// Start fresh conversation
+nebo.chat.newThread();
+
+// Remove chat panel
+nebo.chat.unmount();
+```
+
+**contextId** scopes conversations. Different contexts = different chat histories. Use for:
+- Per-document conversations
+- Per-project analysis
+- Per-view states
+
+#### `nebo.surfaces`
+
+Real-time agent-to-app event system. The agent pushes state changes — your UI reacts:
+
+```typescript
+nebo.surfaces.connect();
+
+// Full state replacement
+nebo.surfaces.on('state_snapshot', (e) => {
+  appState = e.snapshot;
+  render();
+});
+
+// Incremental updates (RFC 6902 JSON Patch)
+nebo.surfaces.on('state_delta', (e) => {
+  // e.delta = [{ op: 'add', path: '/deals/3', value: {...} }]
+  // Auto-applied to nebo.surfaces.state
+  render();
+});
+
+// Agent run lifecycle
+nebo.surfaces.on('run_started', (e) => showSpinner(e.runId));
+nebo.surfaces.on('run_finished', (e) => hideSpinner(e.runId));
+nebo.surfaces.on('run_error', (e) => showError(e.message));
+
+// Streaming text from agent
+nebo.surfaces.on('text_start', (e) => startMessage(e.messageId));
+nebo.surfaces.on('text_content', (e) => appendText(e.messageId, e.delta));
+nebo.surfaces.on('text_end', (e) => finalizeMessage(e.messageId));
+
+// Tool execution
+nebo.surfaces.on('tool_call_start', (e) => showToolRunning(e.toolName));
+nebo.surfaces.on('tool_call_end', (e) => showToolResult(e.toolCallId, e.result));
+
+// A2UI component surfaces
+nebo.surfaces.on('surface_create', (e) => renderSurface(e.surfaceId, e.components));
+nebo.surfaces.on('surface_update', (e) => updateSurface(e.surfaceId, e.components));
+nebo.surfaces.on('surface_delete', (e) => removeSurface(e.surfaceId));
+
+// Data model updates
+nebo.surfaces.on('data_update', (e) => updateData(e.path, e.value));
+
+// Custom app-specific events
+nebo.surfaces.on('custom', (e) => handleCustom(e.name, e.value));
+
+// Wildcard — listen to everything
+nebo.surfaces.on('*', (e) => console.log('Event:', e.type, e));
+
+// Send action back to agent
+nebo.surfaces.send('approve_deal', { dealId: '42' });
+
+// Request full state
+nebo.surfaces.requestState();
+
+// Disconnect when done
+nebo.surfaces.disconnect();
+
+// Unsubscribe from specific event
+const unsub = nebo.surfaces.on('state_snapshot', handler);
+unsub(); // Stop listening
+```
+
+**All surface event types:**
+
+| Event | Data | When |
+|-------|------|------|
+| `run_started` | `runId, threadId?` | Agent begins processing |
+| `run_finished` | `runId` | Agent completes |
+| `run_error` | `runId, message, code?` | Agent errors |
+| `text_start` | `messageId` | Agent begins streaming text |
+| `text_content` | `messageId, delta` | Text chunk arrives |
+| `text_end` | `messageId` | Text stream complete |
+| `tool_call_start` | `toolCallId, toolName` | Agent calls a tool |
+| `tool_call_end` | `toolCallId, result?` | Tool returns |
+| `state_snapshot` | `snapshot` | Full state replacement |
+| `state_delta` | `delta` (JSON Patch ops) | Incremental state update |
+| `surface_create` | `surfaceId, components, data?` | New UI surface |
+| `surface_update` | `surfaceId, components?, data?` | Surface changed |
+| `surface_delete` | `surfaceId` | Surface removed |
+| `data_update` | `surfaceId?, path?, value` | Data model changed |
+| `custom` | `name, value` | App-specific event |
+
+#### `nebo.identity`
+
+Agent metadata (cached after first call):
+
+```typescript
+const me = await nebo.identity.get();
+// { id, name, displayName, description, persona, model, skills, inputValues }
+
+nebo.identity.invalidate(); // Clear cache, re-fetch on next get()
+```
+
+#### `nebo.a2ui`
+
+A2UI v0.9 message bridge for agent-driven UI components. Use with `@a2ui/web_core`:
+
+```typescript
+import { createMessageProcessor } from '@a2ui/web_core/v0_9';
+
+const processor = createMessageProcessor(container);
+nebo.a2ui.init(processor);
+nebo.surfaces.connect(); // A2UI messages flow through surfaces
+
+// Send UI action to agent
+nebo.a2ui.sendAction('surface-1', { type: 'click', target: 'approve-btn' });
+
+// Report error
+nebo.a2ui.sendError('surface-1', 'VALIDATION', 'Amount must be positive');
+```
+
+### UI Principles
+
+1. **Dark theme default.** Nebo's shell is dark. Match it.
+2. **No heavy frameworks required.** Vanilla JS works great. React/Vue/Svelte if you want.
+3. **Responsive to window resize.** Users drag the window — handle it.
+4. **Loading states.** Show skeleton/spinner while sidecar responds.
+5. **Error states.** Show clear messages when things fail. Don't blank screen.
 
 ## Sidecar Development
 
@@ -377,3 +557,5 @@ skills/
 | No bundled skills | Agent doesn't know *when* to use tools |
 | Sidecar stores data outside `$NEBO_APP_DATA` | Data lost on reinstall |
 | Binary takes >10s to start | Startup timeout → launch failure |
+| Not using `nebo.surfaces` for state | UI and agent get out of sync |
+| Missing `nebo.WebSocket` for real-time | Polling instead of streaming |

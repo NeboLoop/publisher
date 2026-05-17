@@ -495,17 +495,57 @@ my-app/
 
 ### Frontend SDK (`@neboai/app-sdk`)
 
-```javascript
+```bash
+pnpm add @neboai/app-sdk
+```
+
+```typescript
 import { nebo } from '@neboai/app-sdk';
 
-nebo.chat.mount(el, { placeholder: '...', theme: 'dark', contextId: id });
-nebo.chat.send('prompt');
-const { text } = await nebo.agents.invoke('prompt');
+// Fetch — relative → sidecar, absolute → CORS-free proxy
+const deals = await nebo.fetch('/deals').then(r => r.json());
+const ext = await nebo.fetch('https://api.example.com/data').then(r => r.json());
+
+// Storage — persistent async KV
+await nebo.storage.setItem('key', value);
+const val = await nebo.storage.getItem('key');
+await nebo.storage.removeItem('key');
+await nebo.storage.clear();
+const keys = await nebo.storage.keys();
+
+// Agents — invoke or stream
+const { text, tools } = await nebo.agents.invoke('prompt');
 for await (const chunk of nebo.agents.stream('prompt')) { ... }
-await nebo.storage.setItem('key', 'value');
-const resp = await nebo.fetch('/sidecar-path');   // relative → sidecar
-const ext = await nebo.fetch('https://...');      // absolute → CORS-free proxy
+
+// Janus — direct LLM (no persona)
+const answer = await nebo.janus.complete({ messages: [...] });
+for await (const text of nebo.janus.stream({ messages: [...] })) { ... }
+
+// Chat — embedded UI panel
+nebo.chat.mount(el, { placeholder: '...', theme: 'dark', contextId: id, scope: 'read' });
+nebo.chat.send('message');
+nebo.chat.onMessage((msg) => { ... });
+nebo.chat.setContext({ route: '/deals/42' });
+nebo.chat.newThread();
+nebo.chat.unmount();
+
+// Surfaces — real-time agent→app events
+nebo.surfaces.connect();
+nebo.surfaces.on('state_snapshot', (e) => { appState = e.snapshot; render(); });
+nebo.surfaces.on('state_delta', (e) => { render(); });
+nebo.surfaces.on('run_started', (e) => showSpinner());
+nebo.surfaces.on('run_finished', (e) => hideSpinner());
+nebo.surfaces.send('action_name', { key: 'value' });
+
+// WebSocket — auto-reconnecting
+const ws = new nebo.WebSocket('/events');
+ws.onmessage = (e) => console.log(e.data);
+
+// Identity
+const { id, name, model, skills } = await nebo.identity.get();
 ```
+
+Full SDK reference: [references/building-apps.md](references/building-apps.md)
 
 ### Sidecar (Rust preferred)
 
