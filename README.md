@@ -60,20 +60,50 @@ irm https://raw.githubusercontent.com/NeboLoop/publisher/main/install.ps1 | iex
 
 Download from [Releases](https://github.com/NeboLoop/publisher/releases), make executable, add to PATH.
 
+The install script automatically:
+1. Downloads the correct binary for your platform
+2. Installs the publisher skill into Claude Code (`~/.claude/skills/neboai`)
+
+After install, just talk to Claude: *"publish this to NeboLoop"* — it handles everything.
+
 ---
 
-## Install the Skill (for AI Coding Agents)
+## How It Works (Zero Friction)
 
-### Claude Code
-
-```bash
-mkdir -p ~/.claude/skills
-ln -s "$(pwd)" ~/.claude/skills/neboai
+```
+You: "publish this skill to NeboLoop"
+         │
+         ▼
+┌─ Claude Code ────────────────────────┐
+│  Skill activates → runs neboai CLI   │
+└──────────┬───────────────────────────┘
+           │
+           ▼
+┌─ neboai CLI ─────────────────────────┐
+│  1. Not authenticated? Opens browser │
+│  2. User clicks "Approve"            │
+│  3. Validates artifact locally        │
+│  4. Uploads to NeboLoop              │
+│  5. Submits for review               │
+└──────────────────────────────────────┘
 ```
 
-### Other Agent Skills-compatible tools
+No manual auth step. No config files. No tokens to copy-paste. First time you publish, the browser opens, you approve, and it continues automatically.
 
-Copy or symlink this directory into your agent's skills path. The skill follows the [Agent Skills standard](https://agentskills.io) and works with any compatible tool (Cursor, VS Code, Gemini CLI, OpenAI Codex, Roo Code, etc.).
+---
+
+## Install for Other Agents
+
+### Cursor / VS Code / Gemini CLI / OpenAI Codex / Any Agent Skills-compatible tool
+
+Copy the skill directory into your agent's skills path:
+
+```bash
+git clone https://github.com/NeboLoop/publisher.git /tmp/neboai-publisher
+cp -r /tmp/neboai-publisher/{SKILL.md,references,scripts,examples} ~/.your-agent/skills/neboai/
+```
+
+The skill follows the [Agent Skills standard](https://agentskills.io) — it works anywhere.
 
 ---
 

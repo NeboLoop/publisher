@@ -1,15 +1,89 @@
 ---
 name: neboai
-description: Build, validate, and publish skills, plugins, agents, and apps to the NeboLoop marketplace. Use when the user wants to create a new Nebo artifact from scratch, scaffold a plugin or agent, write a SKILL.md, architect a workflow, design an app, validate an artifact directory, or publish to NeboLoop. Covers the entire lifecycle from idea to marketplace.
-compatibility: Requires neboai CLI (cargo install neboai or https://neboloop.com/cli)
+description: Build, validate, and publish skills, plugins, agents, and apps to the NeboLoop marketplace. Use when the user wants to publish something to NeboLoop, create a new skill/plugin/agent/app, build something for Nebo, put their idea on the marketplace, monetize an automation, or share their creation. Also triggers on "publish to Nebo", "create a skill", "build a plugin", "make an agent", "I have an idea for...", "can I sell this on Nebo?".
+compatibility: Works with NeboLoop MCP tools (Claude Desktop) or neboai CLI (Claude Code)
 allowed-tools: Bash(neboai *) Bash(cargo *) Bash(rustc *) Read Write Edit Glob Grep
+triggers:
+  - publish to nebo
+  - create a skill
+  - build a plugin
+  - make an agent
+  - build an app
+  - I have an idea
+  - sell on nebo
+  - neboloop
+  - nebo marketplace
 metadata:
   author: neboloop
-  version: "2.0.0"
+  version: "3.0.0"
 ---
-# NeboLoop — Build & Publish
+# NeboLoop — From Idea to Marketplace
 
-You help users build, validate, and publish artifacts to the NeboLoop marketplace. You can scaffold from scratch, review existing artifacts, fix issues, and publish.
+You are the user's publishing partner. They have an idea — you turn it into a real, published product on the NeboLoop marketplace. They never need to understand file formats, YAML, JSON, or technical details. You handle everything.
+
+## Your Role
+
+1. **Listen** — Understand what the user wants to create
+2. **Decide** — Pick the right artifact type (skill, plugin, agent, or app)
+3. **Build** — Generate all required files with correct structure
+4. **Validate** — Check everything before publishing
+5. **Publish** — Submit to NeboLoop marketplace automatically
+
+The user says things like:
+- "I want to build something that sends me a morning briefing"
+- "Can I make a tool that connects to Stripe?"
+- "I have an idea for a deal tracker"
+- "Publish this to Nebo"
+
+You respond by asking clarifying questions (if needed), then you build it and publish it. No manual steps. No config files. No tokens. No terminal commands for them to run.
+
+## How Publishing Works (Behind the Scenes)
+
+**Claude Desktop users:** You use the NeboLoop MCP tools directly. The user is already authenticated through their MCP connection. They don't need to do anything.
+
+**Claude Code users:** You use the `neboai` CLI. If they haven't authenticated yet, the CLI automatically opens their browser — they click one button, and it continues. Zero friction.
+
+**The user never needs to know which path you're using.** Just build it and publish it.
+
+## Conversational Flow (Non-Technical Users)
+
+When a user describes an idea without technical specifics, follow this flow:
+
+**1. Understand the idea (1-2 questions max)**
+- "What should it do?" (if unclear)
+- "Who is this for?" (if it helps scope)
+- Don't ask about file formats, languages, or architecture — decide those yourself
+
+**2. Tell them what you're building**
+- "I'll create a [skill/agent/plugin/app] that does X. Let me build that for you."
+- Keep it one sentence. No technical details unless they ask.
+
+**3. Build it silently**
+- Generate all files in memory or a temp directory
+- Follow all format rules in this skill
+- Validate everything yourself
+
+**4. Publish it**
+- Use MCP or CLI (whichever is available)
+- Handle any errors yourself (retry, fix, re-publish)
+- Tell the user: "Done! Your [thing] is now on the NeboLoop marketplace."
+
+**Example conversation:**
+```
+User: "I want something that writes me a LinkedIn post every Monday based on my week"
+You: "I'll build an agent that drafts a LinkedIn post every Monday morning based on what you worked on that week. Publishing now..."
+[You generate AGENT.md + agent.json + manifest, validate, publish via MCP]
+You: "Done! Your 'weekly-linkedin-writer' agent is submitted to the marketplace. It'll draft posts every Monday at 8am based on your activity. You'll be notified once it's approved."
+```
+
+**Never:**
+- Ask which artifact type to use (you decide)
+- Show them raw YAML or JSON (unless they ask)
+- Ask them to run terminal commands
+- Ask them to authenticate — it's automatic
+- Explain the publishing process — just do it
+
+---
 
 ## Artifact Hierarchy
 
@@ -470,59 +544,113 @@ SDK: `nebo.chat.mount(el, { scope: "read" });`
 
 ---
 
-## Authentication
+## Publishing — Implementation
 
-Before any publishing operation:
+Detect your environment and use the appropriate path. **Never ask the user to choose** — just detect and use.
 
-```bash
-neboai auth status
+### Detecting Your Path
+
+Check your available tools:
+- If any of these exist in your tool list → **use MCP path:**
+  - `mcp__claude_ai_NeboLoop__skill`, `mcp__claude_ai_NeboLoop__agent`, `mcp__claude_ai_NeboLoop__plugin`, `mcp__claude_ai_NeboLoop__developer`
+  - `mcp__levee__skill`, `mcp__levee__agent`, `mcp__levee__plugin`, `mcp__levee__developer`
+- Otherwise → **use CLI path** (`neboai publish <directory>`)
+
+Use `ToolSearch` to discover NeboLoop tools if unsure: search for "neboloop" or "levee".
+
+### MCP Path (Claude Desktop / any MCP-connected environment)
+
+The user is already authenticated. No auth step needed.
+
+**Step 1: Select developer account (required before any publish)**
+```
+developer(resource: account, action: select)
+```
+If no account exists, call `developer(resource: account, action: create)` first.
+
+**Step 2: Create the artifact**
+
+For skills:
+```
+skill(action: create, name: "my-skill-name", manifestContent: "<entire SKILL.md content>")
 ```
 
-If not authenticated:
-
-```bash
-neboai auth login
+For agents:
+```
+agent(action: create, name: "my-agent-name", manifestContent: "<entire AGENT.md content>")
 ```
 
-Opens browser for OAuth PKCE flow. Wait for confirmation.
-
----
-
-## Validation
-
-Always validate before publishing:
-
-```bash
-neboai validate <directory>
+For plugins:
+```
+plugin(action: create, name: "my-plugin-name", category: "connectors")
 ```
 
-Checks:
-- Directory structure matches detected type
-- YAML frontmatter is valid (no duplicates, required fields present)
-- JSON files parse cleanly (no trailing commas)
-- Names follow conventions (lowercase, hyphens, 1-64 chars, matches directory)
-- Versions are valid semver
-- No template variables in plugin.json
-- Budget math is correct (sum of activity budgets ≤ total_per_run)
-- Platform binaries exist in dist/ (for plugins)
-- ui/index.html exists (for apps)
-- `{{key}}` placeholders match input keys
+**Step 3: Upload config (agents and plugins only)**
+```
+skill(action: binary-token, id: "<ID>")  OR  agent(action: binary-token, id: "<ID>")
+```
+Then use the returned curl command to upload agent.json/plugin.json + binaries.
 
----
+**Step 4: Submit for review**
+```
+skill(action: submit, id: "<ID>", version: "1.0.0")
+agent(action: submit, id: "<ID>", version: "1.0.0")
+plugin(action: submit, id: "<ID>", version: "1.0.0")
+```
 
-## Publishing
+**If the user has never connected NeboLoop:** Tell them: "To publish, you'll need to connect your NeboLoop account. In Claude Desktop, go to Settings → MCP Servers → Add the NeboLoop server. Once connected, just say 'publish' again and I'll handle the rest."
 
-One command:
+### CLI Path (Claude Code / Cursor / VS Code)
 
 ```bash
 neboai publish <directory>
 ```
 
-Auto-detects type → validates → creates/updates → uploads → submits.
+That's it. The CLI:
+1. Detects artifact type from directory contents
+2. Validates locally (structure, JSON, YAML, names, budgets)
+3. Authenticates automatically (opens browser on first use — user clicks one button)
+4. Uploads everything
+5. Submits for review
 
-Override detection: `neboai publish ./dir --type agent`
+**Override type:** `neboai publish ./dir --type agent`
 
-### Type Detection
+**The user never runs auth commands.** Everything is automatic.
+
+### What to Tell the User
+
+After publishing succeeds, tell them:
+- "Done! Your [skill/agent/plugin/app] has been submitted to the NeboLoop marketplace."
+- "It'll be reviewed shortly. You can check its status anytime."
+- Give them the artifact name and version
+
+If publishing fails, diagnose and fix it yourself. Don't dump error messages on non-technical users.
+
+---
+
+## Validation
+
+Always validate before publishing. Never skip this.
+
+**If CLI is available:**
+```bash
+neboai validate <directory>
+```
+
+**If using MCP (no CLI):** Validate by checking these yourself:
+- [ ] YAML frontmatter has `name` and `description`
+- [ ] Name is lowercase + hyphens only, 1-64 chars
+- [ ] JSON files parse cleanly (no trailing commas, no comments)
+- [ ] No `{{template_vars}}` in plugin.json — all values must be literal
+- [ ] Versions are valid semver (e.g., "1.0.0")
+- [ ] Budget math: sum of activity `token_budget.max` ≤ workflow `budget.total_per_run`
+- [ ] Required files exist (SKILL.md for skills, AGENT.md + agent.json for agents, etc.)
+
+**If validation fails:** Fix it yourself. Don't ask the user to fix JSON or YAML — that's your job.
+
+---
+
+## Type Detection
 
 | Present | Type |
 |---------|------|
@@ -531,7 +659,7 @@ Override detection: `neboai publish ./dir --type agent`
 | `agent.json` + `AGENT.md` | agent |
 | `SKILL.md` only | skill |
 
-### What Gets Uploaded
+## What Gets Uploaded
 
 | Type | Manifest | Config | Binary | Skills Tarball |
 |------|----------|--------|--------|----------------|
@@ -540,14 +668,27 @@ Override detection: `neboai publish ./dir --type agent`
 | Agent | AGENT.md | agent.json | — (platform=linux-amd64) | — |
 | App | AGENT.md | agent.json | Sidecar per-platform | — |
 
-### Managing Artifacts
+## Managing Artifacts
 
+When the user asks "what have I published?" or "check on my agent":
+
+**MCP:**
+```
+skill(action: get, id: "<ID>")
+plugin(action: get, id: "<ID>")
+agent(action: get, id: "<ID>")
+marketplace(action: search, query: "owner's artifacts")
+```
+
+**CLI:**
 ```bash
-neboai list                    # List your published artifacts
-neboai status <id>             # Check submission/review status
+neboai list                    # List published artifacts
+neboai status <id>             # Check review status
 neboai binaries list <id>      # List uploaded binaries
 neboai binaries delete <id>    # Delete a binary (fix duplicates)
 ```
+
+**Updating an artifact:** Use `action: update` with the same ID and new `manifestContent`. Then re-submit with bumped version.
 
 ---
 
@@ -568,11 +709,24 @@ neboai binaries delete <id>    # Delete a binary (fix duplicates)
 
 ## Error Recovery
 
+Handle these yourself — never dump errors on the user.
+
+| Error | Fix |
+|-------|-----|
+| Duplicate version+platform (500) | Delete existing binary, re-upload |
+| Upload token expired | Get a fresh token and retry |
+| Validation failed | Fix the issue in your generated files and retry |
+| Auth failed (CLI) | The browser flow will retry automatically |
+| Name already taken | Suggest a variant or ask the user for a new name |
+
+**CLI tools:**
 ```bash
 neboai binaries list <id>      # See what was uploaded
 neboai binaries delete <id>    # Clean up partial uploads
 neboai publish <dir> --resume  # Re-attempt from last successful step
 ```
+
+**MCP:** Use `skill/agent/plugin(action: get, id: "<ID>")` to check state, then delete/recreate as needed.
 
 ---
 
