@@ -7,6 +7,16 @@ This repo contains two things:
 1. **`neboai` CLI** — A Rust binary that handles authentication, validation, and publishing
 2. **Publisher Skill** — An [Agent Skills](https://agentskills.io)-standard skill that teaches AI coding agents (Claude Code, Cursor, VS Code Copilot, etc.) how to build and publish NeboLoop artifacts
 
+## Supported Platforms
+
+| Platform | Architecture | Binary |
+|----------|-------------|--------|
+| macOS | Apple Silicon (M1/M2/M3/M4) | `neboai-darwin-arm64` |
+| macOS | Intel | `neboai-darwin-amd64` |
+| Linux | ARM64 | `neboai-linux-arm64` |
+| Linux | x86_64 | `neboai-linux-amd64` |
+| Windows | x86_64 | `neboai-windows-amd64.exe` |
+
 ## Install
 
 ### Quick Install (recommended)
@@ -17,29 +27,38 @@ curl -fsSL https://raw.githubusercontent.com/NeboLoop/publisher/main/install.sh 
 
 Downloads the pre-built binary for your platform and optionally installs the skill for Claude Code.
 
-### npm
+### Homebrew (macOS / Linux)
+
+```bash
+brew tap NeboLoop/tap
+brew install neboai
+```
+
+### npm / pnpm
 
 ```bash
 pnpm add -g @neboai/publisher
 ```
 
+Downloads the correct platform binary automatically during install.
+
 ### Cargo (build from source)
 
 ```bash
-cargo install --path cli
+git clone https://github.com/NeboLoop/publisher.git
+cd publisher/cli
+cargo install --path .
 ```
 
-### Manual
+### Windows (PowerShell)
 
-Download the binary for your platform from [Releases](https://github.com/NeboLoop/publisher/releases), make it executable, and place it on your PATH.
+```powershell
+irm https://raw.githubusercontent.com/NeboLoop/publisher/main/install.ps1 | iex
+```
 
-| Platform | Binary |
-|----------|--------|
-| macOS (Apple Silicon) | `neboai-darwin-arm64` |
-| macOS (Intel) | `neboai-darwin-amd64` |
-| Linux (ARM64) | `neboai-linux-arm64` |
-| Linux (x86_64) | `neboai-linux-amd64` |
-| Windows (x86_64) | `neboai-windows-amd64.exe` |
+### Manual Download
+
+Download from [Releases](https://github.com/NeboLoop/publisher/releases), make executable, add to PATH.
 
 ---
 

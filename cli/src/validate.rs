@@ -79,7 +79,7 @@ fn validate_plugin(dir: &Path) -> Result<()> {
 
     // Check platforms
     if let Some(platforms) = plugin_json.get("platforms") {
-        if platforms.as_object().map_or(true, |p| p.is_empty()) {
+        if platforms.as_object().is_none_or(|p| p.is_empty()) {
             bail!("plugin.json: platforms must have at least one entry");
         }
     }
@@ -143,7 +143,9 @@ fn validate_agent(dir: &Path) -> Result<()> {
                 let trigger_type = trigger.get("type").and_then(|v| v.as_str()).unwrap_or("");
                 match trigger_type {
                     "schedule" | "heartbeat" | "event" | "watch" | "manual" => {}
-                    other => bail!("agent.json: workflow '{name}' has invalid trigger type: '{other}'"),
+                    other => {
+                        bail!("agent.json: workflow '{name}' has invalid trigger type: '{other}'")
+                    }
                 }
             }
 
@@ -234,8 +236,7 @@ fn read_agent_md(dir: &Path) -> Result<String> {
 fn read_json(path: &Path) -> Result<serde_json::Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
-    serde_json::from_str(&content)
-        .with_context(|| format!("Invalid JSON in {}", path.display()))
+    serde_json::from_str(&content).with_context(|| format!("Invalid JSON in {}", path.display()))
 }
 
 fn parse_frontmatter(content: &str) -> Result<serde_yaml::Value> {
@@ -275,7 +276,10 @@ fn validate_name(name: &str) -> Result<()> {
     if name.contains("--") {
         bail!("Name must not contain consecutive hyphens: '{name}'");
     }
-    if !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         bail!("Name must be lowercase alphanumeric + hyphens only: '{name}'");
     }
     Ok(())

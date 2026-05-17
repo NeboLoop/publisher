@@ -1,5 +1,5 @@
-mod auth;
 mod api;
+mod auth;
 mod detect;
 mod publish;
 mod validate;
@@ -7,7 +7,11 @@ mod validate;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "neboai", version, about = "Publish to the NeboLoop marketplace")]
+#[command(
+    name = "neboai",
+    version,
+    about = "Publish to the NeboLoop marketplace"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

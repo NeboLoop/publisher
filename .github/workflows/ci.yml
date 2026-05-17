@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            cli/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('cli/Cargo.lock') }}
+
+      - name: Check formatting
+        working-directory: cli
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        working-directory: cli
+        run: cargo clippy -- -D warnings
+
+      - name: Build
+        working-directory: cli
+        run: cargo build
+
+      - name: Test
+        working-directory: cli
+        run: cargo test
+
+  validate-skill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check SKILL.md frontmatter
+        run: |
+          head -1 SKILL.md | grep -q "^---" || (echo "SKILL.md missing frontmatter" && exit 1)
+          echo "SKILL.md frontmatter OK"
+
+      - name: Check references exist
+        run: |
+          for f in building-skills building-plugins building-agents building-apps skill-format plugin-format agent-format app-format common-mistakes; do
+            test -f "references/${f}.md" || (echo "Missing references/${f}.md" && exit 1)
+          done
+          echo "All references present"
+
+      - name: Check examples
+        run: |
+          test -f examples/skill-example/SKILL.md || exit 1
+          test -f examples/plugin-example/plugin.json || exit 1
+          test -f examples/agent-example/agent.json || exit 1
+          test -f examples/app-example/manifest.json || exit 1
+          echo "All examples present"

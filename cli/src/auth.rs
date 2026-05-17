@@ -65,15 +65,12 @@ pub async fn login() -> Result<()> {
     open::that(&auth_url).ok();
 
     // Start local server to receive callback
-    let server =
-        tiny_http::Server::http(format!("127.0.0.1:{REDIRECT_PORT}"))
-            .map_err(|e| anyhow::anyhow!("Failed to start local callback server: {e}"))?;
+    let server = tiny_http::Server::http(format!("127.0.0.1:{REDIRECT_PORT}"))
+        .map_err(|e| anyhow::anyhow!("Failed to start local callback server: {e}"))?;
 
     println!("Waiting for authorization...");
 
-    let request = server
-        .recv()
-        .context("Failed to receive callback")?;
+    let request = server.recv().context("Failed to receive callback")?;
 
     let url = url::Url::parse(&format!("http://localhost{}", request.url()))?;
     let code = url
@@ -86,7 +83,11 @@ pub async fn login() -> Result<()> {
     let response = tiny_http::Response::from_string(
         "<html><body><h1>Authenticated!</h1><p>You can close this tab.</p></body></html>",
     )
-    .with_header("Content-Type: text/html".parse::<tiny_http::Header>().unwrap());
+    .with_header(
+        "Content-Type: text/html"
+            .parse::<tiny_http::Header>()
+            .unwrap(),
+    );
     request.respond(response).ok();
 
     // Exchange code for token
@@ -119,7 +120,9 @@ pub async fn login() -> Result<()> {
     let creds = Credentials {
         access_token: token.access_token,
         refresh_token: token.refresh_token,
-        expires_at: token.expires_in.map(|exp| chrono::Utc::now().timestamp() + exp),
+        expires_at: token
+            .expires_in
+            .map(|exp| chrono::Utc::now().timestamp() + exp),
     };
 
     save_credentials(&creds)?;
@@ -155,8 +158,7 @@ pub async fn logout() -> Result<()> {
 }
 
 pub async fn get_token() -> Result<String> {
-    let creds = load_credentials()?
-        .context("Not authenticated. Run `neboai auth login` first.")?;
+    let creds = load_credentials()?.context("Not authenticated. Run `neboai auth login` first.")?;
 
     if creds.is_expired() {
         // TODO: implement refresh token flow

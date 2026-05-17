@@ -173,6 +173,7 @@ pub async fn create_artifact(name: &str, category: &str, manifest_content: &str)
     Ok(created.id)
 }
 
+#[allow(dead_code)]
 pub async fn update_manifest(id: &str, manifest_content: &str) -> Result<()> {
     let (client, token) = authenticated_client().await?;
 
@@ -233,16 +234,20 @@ pub async fn upload_binary(
 ) -> Result<()> {
     let url = format!("{BASE_URL}/developer/apps/{id}/binaries");
 
-    let mut form = reqwest::multipart::Form::new()
-        .text("platform", platform.to_string());
+    let mut form = reqwest::multipart::Form::new().text("platform", platform.to_string());
 
     // Manifest (SKILL.md / PLUGIN.md / AGENT.md)
     let manifest_bytes = std::fs::read(manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
     form = form.part(
         "skill",
-        reqwest::multipart::Part::bytes(manifest_bytes)
-            .file_name(manifest_path.file_name().unwrap().to_string_lossy().to_string()),
+        reqwest::multipart::Part::bytes(manifest_bytes).file_name(
+            manifest_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+        ),
     );
 
     // Binary file (optional for agents)
@@ -277,9 +282,7 @@ pub async fn upload_binary(
         );
     }
 
-    let client = reqwest::ClientBuilder::new()
-        .http1_only()
-        .build()?;
+    let client = reqwest::ClientBuilder::new().http1_only().build()?;
 
     let resp = client
         .post(&url)

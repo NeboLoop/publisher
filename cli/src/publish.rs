@@ -2,8 +2,31 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::api;
+use crate::auth;
 use crate::detect::{self, ArtifactType};
 use crate::validate;
+
+/// Ensures the user is authenticated before publishing.
+/// If not authenticated, automatically starts the login flow — zero friction.
+async fn ensure_authenticated() -> Result<()> {
+    match auth::load_credentials()? {
+        Some(creds) if !creds.is_expired() => {
+            // Already authenticated
+            Ok(())
+        }
+        Some(_) => {
+            // Token expired — auto-refresh or re-login
+            println!("Session expired. Logging in...");
+            auth::login().await
+        }
+        None => {
+            // Never authenticated — start login automatically
+            println!("First time publishing — let's get you authenticated.");
+            println!();
+            auth::login().await
+        }
+    }
+}
 
 const PLATFORMS: &[&str] = &[
     "darwin-arm64",
@@ -18,6 +41,9 @@ pub async fn run(path: &str, type_override: Option<&str>, _resume: bool) -> Resu
     if !dir.is_dir() {
         bail!("Path is not a directory: {path}");
     }
+
+    // Check auth before doing anything — auto-login if needed
+    ensure_authenticated().await?;
 
     // Validate first
     println!("Validating...");
@@ -143,9 +169,7 @@ async fn publish_agent(dir: &Path) -> Result<()> {
     let agent_json_path = dir.join("agent.json");
     let frontmatter = extract_frontmatter_fields(&agent_md)?;
     let name = frontmatter.name;
-    let version = frontmatter
-        .version
-        .unwrap_or_else(|| "1.0.0".to_string());
+    let version = frontmatter.version.unwrap_or_else(|| "1.0.0".to_string());
 
     println!("Creating/updating agent: {name}");
 
