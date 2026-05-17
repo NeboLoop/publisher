@@ -99,3 +99,23 @@ jobs:
             artifacts/neboai-linux-arm64/neboai-linux-arm64
             artifacts/neboai-linux-amd64/neboai-linux-amd64
             artifacts/neboai-windows-amd64/neboai-windows-amd64.exe
+
+  publish-npm:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Set version from tag
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
