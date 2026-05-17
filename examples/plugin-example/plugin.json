@@ -1,0 +1,67 @@
+{
+  "id": "weather-api",
+  "slug": "weather-api",
+  "name": "Weather API",
+  "version": "1.0.0",
+  "description": "Provides weather data tools for agents",
+  "author": "NeboLoop",
+  "platforms": {
+    "darwin-arm64": {
+      "binaryName": "weather-api",
+      "sha256": "",
+      "size": 0
+    },
+    "linux-amd64": {
+      "binaryName": "weather-api",
+      "sha256": "",
+      "size": 0
+    }
+  },
+  "envVar": "WEATHER_API_BIN",
+  "capabilities": {
+    "tools": [
+      {
+        "name": "weather.current",
+        "description": "Get current weather conditions for a location",
+        "command": "current",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": { "type": "string", "description": "City name or coordinates" }
+          },
+          "required": ["location"]
+        },
+        "timeoutSeconds": 30
+      },
+      {
+        "name": "weather.forecast",
+        "description": "Get 7-day weather forecast",
+        "command": "forecast",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": { "type": "string", "description": "City name or coordinates" },
+            "days": { "type": "integer", "description": "Number of days (1-7)", "default": 7 }
+          },
+          "required": ["location"]
+        },
+        "timeoutSeconds": 30
+      }
+    ],
+    "configSchema": [
+      {
+        "key": "API_KEY",
+        "label": "Weather API Key",
+        "fieldType": "string",
+        "required": true,
+        "secret": true,
+        "description": "Your API key from weatherapi.com"
+      }
+    ]
+  },
+  "permissions": {
+    "envAllow": ["HOME", "PATH"],
+    "network": true,
+    "maxTimeoutSeconds": 60
+  }
+}

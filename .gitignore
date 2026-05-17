@@ -1,0 +1,16 @@
+# Rust build artifacts
+cli/target/
+dist/
+
+# Node
+node_modules/
+bin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

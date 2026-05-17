@@ -1,0 +1,34 @@
+[package]
+name = "neboai"
+version = "0.1.0"
+edition = "2021"
+description = "CLI for publishing to the NeboLoop marketplace"
+license = "Apache-2.0"
+repository = "https://github.com/neboloop/neboai"
+
+[[bin]]
+name = "neboai"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+anyhow = "1"
+thiserror = "2"
+dirs = "6"
+keyring = { version = "3", features = ["apple-native", "linux-native"] }
+open = "5"
+sha2 = "0.10"
+flate2 = "1"
+tar = "0.4"
+indicatif = "0.17"
+console = "0.15"
+dialoguer = "0.11"
+tiny_http = "0.12"
+url = "2"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }

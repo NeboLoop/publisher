@@ -1,0 +1,113 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0f0f1a;
+  color: #e0e0e0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: 56px 1fr;
+  grid-template-columns: 1fr 360px;
+  height: 100vh;
+}
+
+header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: #1a1a2e;
+  border-bottom: 1px solid #2d2d44;
+}
+
+header h1 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+#new-deal-btn {
+  padding: 8px 16px;
+  background: #6c63ff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#new-deal-btn:hover {
+  background: #5a52d5;
+}
+
+main {
+  overflow-x: auto;
+  padding: 24px;
+}
+
+#pipeline {
+  display: flex;
+  gap: 16px;
+  height: 100%;
+}
+
+.stage {
+  min-width: 280px;
+  background: #1a1a2e;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stage h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  color: #888;
+  letter-spacing: 0.5px;
+}
+
+.deal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.deal-card {
+  background: #252542;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.deal-card:hover {
+  background: #2d2d4a;
+}
+
+.deal-card h3 {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.deal-card .amount {
+  font-size: 13px;
+  color: #6c63ff;
+  font-weight: 600;
+}
+
+#chat-container {
+  border-left: 1px solid #2d2d44;
+  background: #1a1a2e;
+}

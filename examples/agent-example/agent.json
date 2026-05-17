@@ -1,0 +1,64 @@
+{
+  "workflows": {
+    "morning-digest": {
+      "trigger": {
+        "type": "schedule",
+        "cron": "0 7 * * 1-5"
+      },
+      "description": "Weekday morning briefing at 7am",
+      "activities": [
+        {
+          "id": "gather",
+          "intent": "Gather today's calendar events and priority emails",
+          "skills": ["@nebo/skills/briefing-writer"],
+          "steps": [
+            "Fetch calendar events for today",
+            "Scan inbox for high-priority unread emails",
+            "Check pending tasks due today"
+          ],
+          "token_budget": { "max": 4096 }
+        },
+        {
+          "id": "compose",
+          "intent": "Compose and deliver the digest",
+          "steps": [
+            "Summarize into 3-5 bullet points",
+            "Highlight conflicts or deadlines",
+            "Send via notification"
+          ],
+          "token_budget": { "max": 2048 }
+        }
+      ],
+      "budget": { "total_per_run": 6144 }
+    }
+  },
+  "requires": {
+    "plugins": ["gws"]
+  },
+  "inputs": [
+    {
+      "key": "timezone",
+      "label": "Your Timezone",
+      "type": "select",
+      "required": false,
+      "default": "US/Eastern",
+      "options": [
+        { "value": "US/Eastern", "label": "Eastern" },
+        { "value": "US/Central", "label": "Central" },
+        { "value": "US/Pacific", "label": "Pacific" },
+        { "value": "Europe/London", "label": "London" }
+      ]
+    },
+    {
+      "key": "digest_time",
+      "label": "Delivery Time",
+      "type": "text",
+      "required": false,
+      "default": "7:00 AM"
+    }
+  ],
+  "defaults": {
+    "timezone": "user_local",
+    "configurable": ["workflows.morning-digest.trigger.cron"]
+  }
+}

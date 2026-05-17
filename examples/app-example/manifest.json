@@ -1,0 +1,20 @@
+{
+  "id": "deal-tracker",
+  "name": "@acme/agents/deal-tracker",
+  "version": "1.0.0",
+  "description": "Track real estate deals with AI-powered analysis.",
+  "artifact_type": "app",
+  "permissions": [
+    "storage:readwrite",
+    "subagent:invoke",
+    "network:outbound"
+  ],
+  "window": {
+    "title": "Deal Tracker",
+    "width": 1024,
+    "height": 768,
+    "min_width": 480,
+    "min_height": 400,
+    "resizable": true
+  }
+}

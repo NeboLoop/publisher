@@ -1,0 +1,34 @@
+{
+  "skills": [
+    "skills/workspace-mgmt"
+  ],
+  "inputs": [
+    {
+      "key": "market",
+      "label": "Primary Market",
+      "type": "select",
+      "required": false,
+      "default": "residential",
+      "options": [
+        { "value": "residential", "label": "Residential" },
+        { "value": "commercial", "label": "Commercial" },
+        { "value": "mixed-use", "label": "Mixed Use" }
+      ]
+    },
+    {
+      "key": "currency",
+      "label": "Currency",
+      "type": "select",
+      "required": false,
+      "default": "USD",
+      "options": [
+        { "value": "USD", "label": "US Dollar" },
+        { "value": "EUR", "label": "Euro" },
+        { "value": "GBP", "label": "British Pound" }
+      ]
+    }
+  ],
+  "defaults": {
+    "configurable": ["inputs.market", "inputs.currency"]
+  }
+}

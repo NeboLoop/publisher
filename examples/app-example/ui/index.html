@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deal Tracker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Deal Tracker</h1>
+      <button id="new-deal-btn">+ New Deal</button>
+    </header>
+    <main>
+      <div id="pipeline">
+        <div class="stage" data-stage="prospect">
+          <h2>Prospect</h2>
+          <div class="deal-list"></div>
+        </div>
+        <div class="stage" data-stage="analysis">
+          <h2>Analysis</h2>
+          <div class="deal-list"></div>
+        </div>
+        <div class="stage" data-stage="negotiation">
+          <h2>Negotiation</h2>
+          <div class="deal-list"></div>
+        </div>
+        <div class="stage" data-stage="closed">
+          <h2>Closed</h2>
+          <div class="deal-list"></div>
+        </div>
+      </div>
+    </main>
+    <aside id="chat-container"></aside>
+  </div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

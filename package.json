@@ -1,0 +1,42 @@
+{
+  "name": "@neboai/publisher",
+  "version": "1.0.0",
+  "description": "Build, validate, and publish artifacts to the NeboLoop marketplace",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NeboLoop/publisher.git"
+  },
+  "homepage": "https://neboloop.com",
+  "keywords": [
+    "neboloop",
+    "nebo",
+    "publish",
+    "marketplace",
+    "agent-skills",
+    "ai-agents",
+    "cli"
+  ],
+  "bin": {
+    "neboai": "./bin/neboai"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "files": [
+    "bin/",
+    "scripts/postinstall.js",
+    "SKILL.md",
+    "references/",
+    "examples/"
+  ]
+}
