@@ -1,6 +1,6 @@
 # NeboAI Publisher
 
-Build, validate, and publish skills, plugins, agents, and apps to the [NeboLoop](https://neboloop.com) marketplace.
+Build, validate, and publish skills, plugins, agents, and apps to the [NeboLoop](https://neboai.com) marketplace.
 
 This repo contains two things:
 

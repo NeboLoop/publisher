@@ -2,9 +2,13 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-const AUTH_URL: &str = "https://neboloop.com/oauth/authorize";
-const TOKEN_URL: &str = "https://neboloop.com/oauth/token";
-const CLIENT_ID: &str = "neboai-cli";
+const AUTH_URL: &str = "https://neboai.com/oauth/authorize";
+const TOKEN_URL: &str = "https://neboai.com/oauth/token";
+// Dedicated first-party public client for the CLI (PKCE, no secret), registered
+// in the backend oauth_apps table under the nebo-official account. Uses its own
+// port 19847 + /auth/neboai/callback redirect so it never collides with the Nebo
+// desktop app (which owns port 27895).
+const CLIENT_ID: &str = "nbl_neboai_cli";
 const REDIRECT_PORT: u16 = 19847;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,10 +57,11 @@ pub async fn login() -> Result<()> {
     let verifier = generate_pkce_verifier();
     let challenge = generate_pkce_challenge(&verifier);
 
-    let redirect_uri = format!("http://localhost:{REDIRECT_PORT}/callback");
+    let redirect_uri = format!("http://localhost:{REDIRECT_PORT}/auth/neboai/callback");
     let auth_url = format!(
-        "{AUTH_URL}?client_id={CLIENT_ID}&redirect_uri={}&response_type=code&code_challenge={challenge}&code_challenge_method=S256",
-        urlencoding::encode(&redirect_uri)
+        "{AUTH_URL}?client_id={CLIENT_ID}&redirect_uri={}&response_type=code&scope={}&code_challenge={challenge}&code_challenge_method=S256",
+        urlencoding::encode(&redirect_uri),
+        urlencoding::encode("openid profile email")
     );
 
     println!("Opening browser for authentication...");

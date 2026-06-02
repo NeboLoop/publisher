@@ -183,8 +183,13 @@ fn validate_app(dir: &Path) -> Result<()> {
     require_json_field(&manifest, "name", "manifest.json")?;
     require_json_field(&manifest, "version", "manifest.json")?;
 
-    if manifest.get("artifact_type").and_then(|v| v.as_str()) != Some("app") {
-        bail!("manifest.json: artifact_type must be \"app\"");
+    // Accept either "type" (documented) or "artifact_type" (legacy).
+    let kind = manifest
+        .get("type")
+        .and_then(|v| v.as_str())
+        .or_else(|| manifest.get("artifact_type").and_then(|v| v.as_str()));
+    if kind != Some("app") {
+        bail!("manifest.json: type must be \"app\"");
     }
 
     println!("  manifest.json: valid");

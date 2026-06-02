@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::auth;
 
-const BASE_URL: &str = "https://neboloop.com/api/v1";
+const BASE_URL: &str = "https://neboai.com/api/v1";
 
 pub fn client() -> Client {
     Client::new()
@@ -114,13 +114,16 @@ pub async fn delete_binary(id: &str) -> Result<()> {
     Ok(())
 }
 
-// --- Upload Token ---
+// --- Developer accounts ---
 
-pub async fn get_upload_token(id: &str) -> Result<String> {
+/// Resolve the developer account id to publish under. If `slug` is given, picks
+/// the account with that slug; otherwise returns the first account. The account
+/// id is required by the create endpoint (publishing is namespace-scoped).
+pub async fn resolve_account(slug: Option<&str>) -> Result<String> {
     let (client, token) = authenticated_client().await?;
 
     let resp = client
-        .post(format!("{BASE_URL}/developer/apps/{id}/upload-token"))
+        .get(format!("{BASE_URL}/developer/accounts"))
         .bearer_auth(&token)
         .send()
         .await?;
@@ -128,26 +131,52 @@ pub async fn get_upload_token(id: &str) -> Result<String> {
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await?;
-        anyhow::bail!("Failed to get upload token ({status}): {body}");
+        anyhow::bail!("Failed to list developer accounts ({status}): {body}");
     }
 
     #[derive(Deserialize)]
-    struct TokenResp {
-        token: String,
+    struct Account {
+        id: String,
+        slug: String,
     }
+    let val: serde_json::Value = resp.json().await?;
+    let arr = val.get("accounts").cloned().unwrap_or(val);
+    let accounts: Vec<Account> = serde_json::from_value(arr).unwrap_or_default();
 
-    let token_resp: TokenResp = resp.json().await?;
-    Ok(token_resp.token)
+    if accounts.is_empty() {
+        anyhow::bail!("No developer accounts found. Create one at neboai.com first.");
+    }
+    match slug {
+        Some(s) => accounts
+            .iter()
+            .find(|a| a.slug == s)
+            .map(|a| a.id.clone())
+            .with_context(|| format!("No developer account with slug '{s}'")),
+        None => Ok(accounts[0].id.clone()),
+    }
 }
 
 // --- Create / Update / Submit ---
 
-pub async fn create_artifact(name: &str, category: &str, manifest_content: &str) -> Result<String> {
+pub async fn create_artifact(
+    account_id: &str,
+    name: &str,
+    artifact_type: &str,
+    category: &str,
+    description: &str,
+    version: &str,
+    manifest_content: &str,
+) -> Result<String> {
     let (client, token) = authenticated_client().await?;
 
     let body = serde_json::json!({
+        "accountId": account_id,
         "name": name,
+        "type": artifact_type,
         "category": category,
+        "description": description,
+        "version": version,
+        "visibility": "private",
         "manifestContent": manifest_content,
     });
 
@@ -225,13 +254,13 @@ pub async fn submit(id: &str, version: &str) -> Result<()> {
 
 pub async fn upload_binary(
     id: &str,
-    upload_token: &str,
     platform: &str,
     binary_path: Option<&std::path::Path>,
     manifest_path: &std::path::Path,
     config_path: Option<&std::path::Path>,
     skills_tarball: Option<&std::path::Path>,
 ) -> Result<()> {
+    let upload_token = auth::get_token().await?;
     let url = format!("{BASE_URL}/developer/apps/{id}/binaries");
 
     let mut form = reqwest::multipart::Form::new().text("platform", platform.to_string());
@@ -286,7 +315,7 @@ pub async fn upload_binary(
 
     let resp = client
         .post(&url)
-        .bearer_auth(upload_token)
+        .bearer_auth(&upload_token)
         .multipart(form)
         .send()
         .await?;

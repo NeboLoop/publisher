@@ -39,12 +39,15 @@ impl ArtifactType {
 /// 3. agent.json + AGENT.md → Agent
 /// 4. SKILL.md → Skill
 pub fn detect(path: &Path) -> Option<ArtifactType> {
-    // Check for App (manifest.json with artifact_type: "app")
+    // Check for App (manifest.json with type/artifact_type == "app").
+    // Accept both keys: docs use "type", older manifests use "artifact_type".
     let manifest_path = path.join("manifest.json");
     if manifest_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&manifest_path) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if json.get("artifact_type").and_then(|v| v.as_str()) == Some("app") {
+                let is_app = json.get("type").and_then(|v| v.as_str()) == Some("app")
+                    || json.get("artifact_type").and_then(|v| v.as_str()) == Some("app");
+                if is_app {
                     return Some(ArtifactType::App);
                 }
             }

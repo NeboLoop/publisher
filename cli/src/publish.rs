@@ -56,29 +56,32 @@ pub async fn run(path: &str, type_override: Option<&str>, _resume: bool) -> Resu
 
     println!("\nPublishing as {artifact_type}...");
 
+    // Resolve the developer account to publish under (required by the create
+    // endpoint). Honors $NEBOAI_ACCOUNT (a slug) if set, else the first account.
+    let account_slug = std::env::var("NEBOAI_ACCOUNT").ok();
+    let account_id = api::resolve_account(account_slug.as_deref()).await?;
+
     match artifact_type {
-        ArtifactType::Skill => publish_skill(dir).await?,
-        ArtifactType::Plugin => publish_plugin(dir).await?,
-        ArtifactType::Agent => publish_agent(dir).await?,
-        ArtifactType::App => publish_app(dir).await?,
+        ArtifactType::Skill => publish_skill(dir, &account_id).await?,
+        ArtifactType::Plugin => publish_plugin(dir, &account_id).await?,
+        ArtifactType::Agent => publish_agent(dir, &account_id).await?,
+        ArtifactType::App => publish_app(dir, &account_id).await?,
     }
 
     Ok(())
 }
 
-async fn publish_skill(dir: &Path) -> Result<()> {
+async fn publish_skill(dir: &Path, account_id: &str) -> Result<()> {
     let skill_md = read_file(dir, "SKILL.md")?;
-    let frontmatter = extract_frontmatter_fields(&skill_md)?;
-    let name = frontmatter.name;
-    let version = frontmatter.version.unwrap_or_else(|| "1.0.0".to_string());
+    let fm = extract_frontmatter_fields(&skill_md)?;
+    let name = fm.name;
+    let version = fm.version.unwrap_or_else(|| "1.0.0".to_string());
+    let category = category_display_name(fm.category.as_deref().unwrap_or(""));
 
-    println!("Creating/updating skill: {name}");
-
-    // Create or update
-    let id = api::create_artifact(&name, "productivity", &skill_md).await?;
+    println!("Creating skill: {name}");
+    let id = api::create_artifact(account_id, &name, "skill", category, &fm.description, &version, &skill_md).await?;
     println!("  Artifact ID: {id}");
 
-    // Submit
     println!("Submitting v{version} for review...");
     api::submit(&id, &version).await?;
 
@@ -86,14 +89,15 @@ async fn publish_skill(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn publish_plugin(dir: &Path) -> Result<()> {
+async fn publish_plugin(dir: &Path, account_id: &str) -> Result<()> {
     let plugin_md = read_file(dir, "PLUGIN.md")?;
     let plugin_json_path = dir.join("plugin.json");
     let plugin_json: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&plugin_json_path)?)?;
 
     let name = plugin_json
-        .get("name")
+        .get("slug")
+        .or_else(|| plugin_json.get("name"))
         .and_then(|v| v.as_str())
         .unwrap_or("unnamed")
         .to_string();
@@ -102,15 +106,26 @@ async fn publish_plugin(dir: &Path) -> Result<()> {
         .and_then(|v| v.as_str())
         .unwrap_or("1.0.0")
         .to_string();
+    let category = category_display_name(
+        plugin_json.get("category").and_then(|v| v.as_str()).unwrap_or(""),
+    );
+    // Description from PLUGIN.md frontmatter (falls back to plugin.json), capped at 480 chars.
+    let fm = extract_frontmatter_fields(&plugin_md).ok();
+    let description = fm
+        .as_ref()
+        .map(|f| f.description.clone())
+        .filter(|d| !d.is_empty())
+        .or_else(|| plugin_json.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .unwrap_or_else(|| format!("{name} — NeboAI plugin"));
+    let description: String = description.chars().take(480).collect();
 
-    println!("Creating/updating plugin: {name}");
-
-    let id = api::create_artifact(&name, "connectors", &plugin_md).await?;
+    println!("Creating plugin: {name}");
+    let id = api::create_artifact(account_id, &name, "plugin", category, &description, &version, &plugin_md).await?;
     println!("  Artifact ID: {id}");
 
     // Build skills tarball if skills/ exists
     let skills_tarball = if dir.join("skills").exists() {
-        let tarball_path = std::env::temp_dir().join("neboai-skills.tar.gz");
+        let tarball_path = std::env::temp_dir().join(format!("neboai-{name}-skills.tar.gz"));
         build_skills_tarball(dir, &tarball_path)?;
         println!("  Skills tarball built");
         Some(tarball_path)
@@ -118,45 +133,31 @@ async fn publish_plugin(dir: &Path) -> Result<()> {
         None
     };
 
-    // Get upload token
-    let upload_token = api::get_upload_token(&id).await?;
-
-    // Find available platform binaries
-    let dist_dir = dir.join("dist");
+    // Upload available platform binaries (config + skills on the first one).
+    let dist_dir = dir.join("dist").join("plugin");
     let mut first = true;
-
     for platform in PLATFORMS {
         let platform_dir = dist_dir.join(platform);
         if !platform_dir.exists() {
             continue;
         }
-
-        // Find binary in platform directory
         let binary_path = find_binary(&platform_dir)?;
-
         api::upload_binary(
             &id,
-            &upload_token,
             platform,
             Some(&binary_path),
             &dir.join("PLUGIN.md"),
             if first { Some(&plugin_json_path) } else { None },
-            if first {
-                skills_tarball.as_deref()
-            } else {
-                None
-            },
+            if first { skills_tarball.as_deref() } else { None },
         )
         .await?;
-
         first = false;
     }
 
     if first {
-        bail!("No platform binaries found in dist/. Expected at least one of: {PLATFORMS:?}");
+        bail!("No platform binaries found in dist/plugin/. Run ./build.sh first. Expected at least one of: {PLATFORMS:?}");
     }
 
-    // Submit
     println!("Submitting v{version} for review...");
     api::submit(&id, &version).await?;
 
@@ -164,25 +165,21 @@ async fn publish_plugin(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn publish_agent(dir: &Path) -> Result<()> {
+async fn publish_agent(dir: &Path, account_id: &str) -> Result<()> {
     let agent_md = read_file(dir, "AGENT.md")?;
     let agent_json_path = dir.join("agent.json");
-    let frontmatter = extract_frontmatter_fields(&agent_md)?;
-    let name = frontmatter.name;
-    let version = frontmatter.version.unwrap_or_else(|| "1.0.0".to_string());
+    let fm = extract_frontmatter_fields(&agent_md)?;
+    let name = fm.name;
+    let version = fm.version.unwrap_or_else(|| "1.0.0".to_string());
+    let category = category_display_name(fm.category.as_deref().unwrap_or(""));
 
-    println!("Creating/updating agent: {name}");
-
-    let id = api::create_artifact(&name, "productivity", &agent_md).await?;
+    println!("Creating agent: {name}");
+    let id = api::create_artifact(account_id, &name, "agent", category, &fm.description, &version, &agent_md).await?;
     println!("  Artifact ID: {id}");
-
-    // Get upload token and upload agent.json
-    let upload_token = api::get_upload_token(&id).await?;
 
     api::upload_binary(
         &id,
-        &upload_token,
-        "linux-amd64", // Required but agents aren't platform-specific
+        "linux-amd64", // Required field, but agents aren't platform-specific
         None,          // No binary file for agents
         &dir.join("AGENT.md"),
         Some(&agent_json_path),
@@ -190,7 +187,6 @@ async fn publish_agent(dir: &Path) -> Result<()> {
     )
     .await?;
 
-    // Submit
     println!("Submitting v{version} for review...");
     api::submit(&id, &version).await?;
 
@@ -198,7 +194,7 @@ async fn publish_agent(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn publish_app(dir: &Path) -> Result<()> {
+async fn publish_app(dir: &Path, account_id: &str) -> Result<()> {
     let agent_md = read_file(dir, "AGENT.md")?;
     let manifest: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json"))?)?;
@@ -213,14 +209,20 @@ async fn publish_app(dir: &Path) -> Result<()> {
         .and_then(|v| v.as_str())
         .unwrap_or("1.0.0")
         .to_string();
+    let fm = extract_frontmatter_fields(&agent_md).ok();
+    let description = fm
+        .as_ref()
+        .map(|f| f.description.clone())
+        .filter(|d| !d.is_empty())
+        .or_else(|| manifest.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .unwrap_or_else(|| format!("{name} — NeboAI app"));
+    let category = category_display_name(
+        manifest.get("category").and_then(|v| v.as_str()).unwrap_or(""),
+    );
 
-    println!("Creating/updating app: {name}");
-
-    let id = api::create_artifact(&name, "apps", &agent_md).await?;
+    println!("Creating app: {name}");
+    let id = api::create_artifact(account_id, &name, "agent", category, &description, &version, &agent_md).await?;
     println!("  Artifact ID: {id}");
-
-    // Upload agent.json if present
-    let upload_token = api::get_upload_token(&id).await?;
 
     let config_path = if dir.join("agent.json").exists() {
         Some(dir.join("agent.json"))
@@ -230,7 +232,6 @@ async fn publish_app(dir: &Path) -> Result<()> {
 
     api::upload_binary(
         &id,
-        &upload_token,
         "linux-amd64",
         None,
         &dir.join("AGENT.md"),
@@ -244,10 +245,8 @@ async fn publish_app(dir: &Path) -> Result<()> {
     if sidecar_dist.exists() {
         println!("  Uploading sidecar binary...");
         if let Ok(binary) = find_binary(&sidecar_dist) {
-            // For sidecar, upload for the current platform
             api::upload_binary(
                 &id,
-                &upload_token,
                 current_platform(),
                 Some(&binary),
                 &dir.join("AGENT.md"),
@@ -258,7 +257,6 @@ async fn publish_app(dir: &Path) -> Result<()> {
         }
     }
 
-    // Submit
     println!("Submitting v{version} for review...");
     api::submit(&id, &version).await?;
 
@@ -271,6 +269,25 @@ async fn publish_app(dir: &Path) -> Result<()> {
 struct FrontmatterFields {
     name: String,
     version: Option<String>,
+    description: String,
+    category: Option<String>,
+}
+
+/// Map a category slug (as used in plugin.json / frontmatter) to the marketplace
+/// display name the create endpoint expects. Unknown slugs fall back to "Build & connect".
+fn category_display_name(slug: &str) -> &'static str {
+    match slug {
+        "business" => "Run your business",
+        "content" => "Create content",
+        "customers" => "Find customers",
+        "money" => "Manage money",
+        "organized" => "Get organized",
+        "communicate" | "communication" => "Communicate",
+        "learn" => "Learn & grow",
+        "research" => "Research & decide",
+        "documents" => "Handle documents",
+        _ => "Build & connect",
+    }
 }
 
 fn extract_frontmatter_fields(content: &str) -> Result<FrontmatterFields> {
@@ -288,6 +305,17 @@ fn extract_frontmatter_fields(content: &str) -> Result<FrontmatterFields> {
         .unwrap_or("unnamed")
         .to_string();
 
+    let description = yaml
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let category = yaml
+        .get("category")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     let version = yaml
         .get("metadata")
         .and_then(|m| m.get("version"))
@@ -295,7 +323,12 @@ fn extract_frontmatter_fields(content: &str) -> Result<FrontmatterFields> {
         .or_else(|| yaml.get("version").and_then(|v| v.as_str()))
         .map(|s| s.to_string());
 
-    Ok(FrontmatterFields { name, version })
+    Ok(FrontmatterFields {
+        name,
+        version,
+        description,
+        category,
+    })
 }
 
 fn read_file(dir: &Path, name: &str) -> Result<String> {
