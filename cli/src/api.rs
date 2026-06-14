@@ -4,7 +4,13 @@ use serde::Deserialize;
 
 use crate::auth;
 
-const BASE_URL: &str = "https://neboai.com/api/v1";
+const DEFAULT_BASE_URL: &str = "https://neboai.com/api/v1";
+
+/// Base API URL. Defaults to production; override with $NEBOAI_BASE_URL to point
+/// the CLI at a local server (e.g. http://localhost:8080/api/v1) for testing.
+pub fn base_url() -> String {
+    std::env::var("NEBOAI_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string())
+}
 
 pub fn client() -> Client {
     Client::new()
@@ -19,9 +25,10 @@ pub async fn authenticated_client() -> Result<(Client, String)> {
 
 pub async fn list_artifacts() -> Result<()> {
     let (client, token) = authenticated_client().await?;
+    let base = base_url();
 
     let resp = client
-        .get(format!("{BASE_URL}/developer/apps"))
+        .get(format!("{base}/developer/apps"))
         .bearer_auth(&token)
         .send()
         .await?;
@@ -45,9 +52,10 @@ pub async fn list_artifacts() -> Result<()> {
 
 pub async fn get_status(id: &str) -> Result<()> {
     let (client, token) = authenticated_client().await?;
+    let base = base_url();
 
     let resp = client
-        .get(format!("{BASE_URL}/developer/apps/{id}"))
+        .get(format!("{base}/developer/apps/{id}"))
         .bearer_auth(&token)
         .send()
         .await?;
@@ -72,9 +80,10 @@ pub async fn get_status(id: &str) -> Result<()> {
 
 pub async fn list_binaries(id: &str) -> Result<()> {
     let (client, token) = authenticated_client().await?;
+    let base = base_url();
 
     let resp = client
-        .get(format!("{BASE_URL}/developer/apps/{id}/binaries"))
+        .get(format!("{base}/developer/apps/{id}/binaries"))
         .bearer_auth(&token)
         .send()
         .await?;
@@ -97,9 +106,10 @@ pub async fn list_binaries(id: &str) -> Result<()> {
 
 pub async fn delete_binary(id: &str) -> Result<()> {
     let (client, token) = authenticated_client().await?;
+    let base = base_url();
 
     let resp = client
-        .delete(format!("{BASE_URL}/developer/binaries/{id}"))
+        .delete(format!("{base}/developer/binaries/{id}"))
         .bearer_auth(&token)
         .send()
         .await?;
@@ -121,9 +131,10 @@ pub async fn delete_binary(id: &str) -> Result<()> {
 /// id is required by the create endpoint (publishing is namespace-scoped).
 pub async fn resolve_account(slug: Option<&str>) -> Result<String> {
     let (client, token) = authenticated_client().await?;
+    let base = base_url();
 
     let resp = client
-        .get(format!("{BASE_URL}/developer/accounts"))
+        .get(format!("{base}/developer/accounts"))
         .bearer_auth(&token)
         .send()
         .await?;
@@ -168,6 +179,7 @@ pub async fn create_artifact(
     manifest_content: &str,
 ) -> Result<String> {
     let (client, token) = authenticated_client().await?;
+    let base = base_url();
 
     let body = serde_json::json!({
         "accountId": account_id,
@@ -181,7 +193,7 @@ pub async fn create_artifact(
     });
 
     let resp = client
-        .post(format!("{BASE_URL}/developer/apps"))
+        .post(format!("{base}/developer/apps"))
         .bearer_auth(&token)
         .json(&body)
         .send()
@@ -205,13 +217,14 @@ pub async fn create_artifact(
 #[allow(dead_code)]
 pub async fn update_manifest(id: &str, manifest_content: &str) -> Result<()> {
     let (client, token) = authenticated_client().await?;
+    let base = base_url();
 
     let body = serde_json::json!({
         "manifestContent": manifest_content,
     });
 
     let resp = client
-        .put(format!("{BASE_URL}/developer/apps/{id}"))
+        .put(format!("{base}/developer/apps/{id}"))
         .bearer_auth(&token)
         .json(&body)
         .send()
@@ -228,13 +241,14 @@ pub async fn update_manifest(id: &str, manifest_content: &str) -> Result<()> {
 
 pub async fn submit(id: &str, version: &str) -> Result<()> {
     let (client, token) = authenticated_client().await?;
+    let base = base_url();
 
     let body = serde_json::json!({
         "version": version,
     });
 
     let resp = client
-        .post(format!("{BASE_URL}/developer/apps/{id}/submit"))
+        .post(format!("{base}/developer/apps/{id}/submit"))
         .bearer_auth(&token)
         .json(&body)
         .send()
@@ -261,7 +275,8 @@ pub async fn upload_binary(
     skills_tarball: Option<&std::path::Path>,
 ) -> Result<()> {
     let upload_token = auth::get_token().await?;
-    let url = format!("{BASE_URL}/developer/apps/{id}/binaries");
+    let base = base_url();
+    let url = format!("{base}/developer/apps/{id}/binaries");
 
     let mut form = reqwest::multipart::Form::new().text("platform", platform.to_string());
 
@@ -328,4 +343,78 @@ pub async fn upload_binary(
 
     println!("  Uploaded: {platform}");
     Ok(())
+}
+
+// --- Skill bundle upload (multi-file skills) ---
+
+/// Zip an entire skill directory in memory, preserving relative paths, then POST
+/// it to /skills/{id}/bundle. The server extracts SKILL.md into the manifest and
+/// stores the rest (references/, scripts/, assets/) as skill files. `.git/` is
+/// skipped to keep the upload small; the server filters other noise itself.
+pub async fn upload_bundle(id: &str, dir: &std::path::Path) -> Result<usize> {
+    let (zip_bytes, file_count) = zip_dir(dir)?;
+
+    let upload_token = auth::get_token().await?;
+    let base = base_url();
+    let url = format!("{base}/skills/{id}/bundle");
+
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(zip_bytes).file_name("skill.zip"),
+    );
+
+    // HTTP/1.1 only — HTTP/2 causes stream errors on large multipart uploads.
+    let client = reqwest::ClientBuilder::new().http1_only().build()?;
+
+    let resp = client
+        .post(&url)
+        .bearer_auth(&upload_token)
+        .multipart(form)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await?;
+        anyhow::bail!("Bundle upload failed ({status}): {body}");
+    }
+
+    Ok(file_count)
+}
+
+/// Build a zip of `dir` in memory. Returns the zip bytes and the number of files
+/// included. Entry paths are relative to `dir`. Skips `.git/` and common OS noise.
+fn zip_dir(dir: &std::path::Path) -> Result<(Vec<u8>, usize)> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    let mut zip = zip::ZipWriter::new(&mut cursor);
+    let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    let mut count = 0usize;
+    for entry in walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(dir)
+            .with_context(|| format!("path escapes skill dir: {}", path.display()))?;
+        // Normalize to forward slashes; the server matches path components.
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        // Skip VCS metadata and OS noise; the server drops the rest.
+        if rel_str.split('/').any(|c| c == ".git")
+            || rel.file_name().map(|n| n == ".DS_Store").unwrap_or(false)
+        {
+            continue;
+        }
+        let bytes = std::fs::read(path)
+            .with_context(|| format!("Failed to read {}", path.display()))?;
+        zip.start_file(rel_str, opts)?;
+        zip.write_all(&bytes)?;
+        count += 1;
+    }
+    zip.finish()?;
+    Ok((cursor.into_inner(), count))
 }

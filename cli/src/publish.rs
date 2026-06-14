@@ -82,6 +82,12 @@ async fn publish_skill(dir: &Path, account_id: &str) -> Result<()> {
     let id = api::create_artifact(account_id, &name, "skill", category, &fm.description, &version, &skill_md).await?;
     println!("  Artifact ID: {id}");
 
+    // Upload the whole directory as a bundle so references/, scripts/, and
+    // assets/ ship alongside SKILL.md. The server re-extracts SKILL.md into the
+    // manifest, so this is safe (and a no-op in effect) for single-file skills.
+    let file_count = api::upload_bundle(&id, dir).await?;
+    println!("  Uploaded bundle ({file_count} files: SKILL.md + references/scripts/assets)");
+
     println!("Submitting v{version} for review...");
     api::submit(&id, &version).await?;
 
