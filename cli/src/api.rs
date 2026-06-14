@@ -176,6 +176,7 @@ pub async fn create_artifact(
     category: &str,
     description: &str,
     version: &str,
+    visibility: &str,
     manifest_content: &str,
 ) -> Result<String> {
     let (client, token) = authenticated_client().await?;
@@ -188,7 +189,7 @@ pub async fn create_artifact(
         "category": category,
         "description": description,
         "version": version,
-        "visibility": "private",
+        "visibility": visibility,
         "manifestContent": manifest_content,
     });
 

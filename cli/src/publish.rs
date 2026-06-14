@@ -36,7 +36,12 @@ const PLATFORMS: &[&str] = &[
     "windows-amd64",
 ];
 
-pub async fn run(path: &str, type_override: Option<&str>, _resume: bool) -> Result<()> {
+pub async fn run(
+    path: &str,
+    type_override: Option<&str>,
+    visibility: &str,
+    _resume: bool,
+) -> Result<()> {
     let dir = Path::new(path);
     if !dir.is_dir() {
         bail!("Path is not a directory: {path}");
@@ -62,24 +67,25 @@ pub async fn run(path: &str, type_override: Option<&str>, _resume: bool) -> Resu
     let account_id = api::resolve_account(account_slug.as_deref()).await?;
 
     match artifact_type {
-        ArtifactType::Skill => publish_skill(dir, &account_id).await?,
-        ArtifactType::Plugin => publish_plugin(dir, &account_id).await?,
-        ArtifactType::Agent => publish_agent(dir, &account_id).await?,
-        ArtifactType::App => publish_app(dir, &account_id).await?,
+        ArtifactType::Skill => publish_skill(dir, &account_id, visibility).await?,
+        ArtifactType::Plugin => publish_plugin(dir, &account_id, visibility).await?,
+        ArtifactType::Agent => publish_agent(dir, &account_id, visibility).await?,
+        ArtifactType::App => publish_app(dir, &account_id, visibility).await?,
     }
 
     Ok(())
 }
 
-async fn publish_skill(dir: &Path, account_id: &str) -> Result<()> {
+async fn publish_skill(dir: &Path, account_id: &str, visibility: &str) -> Result<()> {
     let skill_md = read_file(dir, "SKILL.md")?;
     let fm = extract_frontmatter_fields(&skill_md)?;
     let name = fm.name;
     let version = fm.version.unwrap_or_else(|| "1.0.0".to_string());
     let category = category_display_name(fm.category.as_deref().unwrap_or(""));
+    let description = cap_description(&fm.description);
 
     println!("Creating skill: {name}");
-    let id = api::create_artifact(account_id, &name, "skill", category, &fm.description, &version, &skill_md).await?;
+    let id = api::create_artifact(account_id, &name, "skill", category, &description, &version, visibility, &skill_md).await?;
     println!("  Artifact ID: {id}");
 
     // Upload the whole directory as a bundle so references/, scripts/, and
@@ -88,14 +94,11 @@ async fn publish_skill(dir: &Path, account_id: &str) -> Result<()> {
     let file_count = api::upload_bundle(&id, dir).await?;
     println!("  Uploaded bundle ({file_count} files: SKILL.md + references/scripts/assets)");
 
-    println!("Submitting v{version} for review...");
-    api::submit(&id, &version).await?;
-
-    println!("\nDone! Skill '{name}' submitted for review.");
+    finalize(&id, &name, "Skill", &version, visibility).await?;
     Ok(())
 }
 
-async fn publish_plugin(dir: &Path, account_id: &str) -> Result<()> {
+async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Result<()> {
     let plugin_md = read_file(dir, "PLUGIN.md")?;
     let plugin_json_path = dir.join("plugin.json");
     let plugin_json: serde_json::Value =
@@ -123,10 +126,10 @@ async fn publish_plugin(dir: &Path, account_id: &str) -> Result<()> {
         .filter(|d| !d.is_empty())
         .or_else(|| plugin_json.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()))
         .unwrap_or_else(|| format!("{name} — NeboAI plugin"));
-    let description: String = description.chars().take(480).collect();
+    let description = cap_description(&description);
 
     println!("Creating plugin: {name}");
-    let id = api::create_artifact(account_id, &name, "plugin", category, &description, &version, &plugin_md).await?;
+    let id = api::create_artifact(account_id, &name, "plugin", category, &description, &version, visibility, &plugin_md).await?;
     println!("  Artifact ID: {id}");
 
     // Build skills tarball if skills/ exists
@@ -164,23 +167,21 @@ async fn publish_plugin(dir: &Path, account_id: &str) -> Result<()> {
         bail!("No platform binaries found in dist/plugin/. Run ./build.sh first. Expected at least one of: {PLATFORMS:?}");
     }
 
-    println!("Submitting v{version} for review...");
-    api::submit(&id, &version).await?;
-
-    println!("\nDone! Plugin '{name}' submitted for review.");
+    finalize(&id, &name, "Plugin", &version, visibility).await?;
     Ok(())
 }
 
-async fn publish_agent(dir: &Path, account_id: &str) -> Result<()> {
+async fn publish_agent(dir: &Path, account_id: &str, visibility: &str) -> Result<()> {
     let agent_md = read_file(dir, "AGENT.md")?;
     let agent_json_path = dir.join("agent.json");
     let fm = extract_frontmatter_fields(&agent_md)?;
     let name = fm.name;
     let version = fm.version.unwrap_or_else(|| "1.0.0".to_string());
     let category = category_display_name(fm.category.as_deref().unwrap_or(""));
+    let description = cap_description(&fm.description);
 
     println!("Creating agent: {name}");
-    let id = api::create_artifact(account_id, &name, "agent", category, &fm.description, &version, &agent_md).await?;
+    let id = api::create_artifact(account_id, &name, "agent", category, &description, &version, visibility, &agent_md).await?;
     println!("  Artifact ID: {id}");
 
     api::upload_binary(
@@ -193,14 +194,11 @@ async fn publish_agent(dir: &Path, account_id: &str) -> Result<()> {
     )
     .await?;
 
-    println!("Submitting v{version} for review...");
-    api::submit(&id, &version).await?;
-
-    println!("\nDone! Agent '{name}' submitted for review.");
+    finalize(&id, &name, "Agent", &version, visibility).await?;
     Ok(())
 }
 
-async fn publish_app(dir: &Path, account_id: &str) -> Result<()> {
+async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<()> {
     let agent_md = read_file(dir, "AGENT.md")?;
     let manifest: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json"))?)?;
@@ -222,12 +220,13 @@ async fn publish_app(dir: &Path, account_id: &str) -> Result<()> {
         .filter(|d| !d.is_empty())
         .or_else(|| manifest.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()))
         .unwrap_or_else(|| format!("{name} — NeboAI app"));
+    let description = cap_description(&description);
     let category = category_display_name(
         manifest.get("category").and_then(|v| v.as_str()).unwrap_or(""),
     );
 
     println!("Creating app: {name}");
-    let id = api::create_artifact(account_id, &name, "agent", category, &description, &version, &agent_md).await?;
+    let id = api::create_artifact(account_id, &name, "agent", category, &description, &version, visibility, &agent_md).await?;
     println!("  Artifact ID: {id}");
 
     let config_path = if dir.join("agent.json").exists() {
@@ -263,14 +262,50 @@ async fn publish_app(dir: &Path, account_id: &str) -> Result<()> {
         }
     }
 
-    println!("Submitting v{version} for review...");
-    api::submit(&id, &version).await?;
-
-    println!("\nDone! App '{name}' submitted for review.");
+    finalize(&id, &name, "App", &version, visibility).await?;
     Ok(())
 }
 
 // --- Helpers ---
+
+/// Finish a publish: submit for review when going public, otherwise leave the
+/// artifact unlisted (private/loop have nothing to review). Keeps the
+/// create → bundle/upload → finalize shape identical across artifact types.
+async fn finalize(id: &str, name: &str, kind: &str, version: &str, visibility: &str) -> Result<()> {
+    if visibility == "public" {
+        println!("Submitting v{version} for review...");
+        api::submit(id, version).await?;
+        println!("\nDone! {kind} '{name}' submitted for review.");
+    } else {
+        println!("\nDone! {kind} '{name}' published ({visibility}). Not submitted for review.");
+    }
+    Ok(())
+}
+
+/// Marketplace submission caps the description at 500 characters. The skill/agent
+/// frontmatter `description` doubles as the trigger text and is often longer, so
+/// cap it here (counting chars, not bytes) before sending it to create/submit.
+const MAX_DESCRIPTION: usize = 500;
+
+/// Truncate `desc` to at most MAX_DESCRIPTION characters, cutting on a word
+/// boundary and appending an ellipsis when it has to shorten. The full text
+/// still lives in the manifest's frontmatter; this only trims the marketplace
+/// metadata field.
+fn cap_description(desc: &str) -> String {
+    let desc = desc.trim();
+    if desc.chars().count() <= MAX_DESCRIPTION {
+        return desc.to_string();
+    }
+    // Reserve one char for the ellipsis so the result stays within the cap.
+    let limit = MAX_DESCRIPTION - 1;
+    let truncated: String = desc.chars().take(limit).collect();
+    let body = match truncated.rfind(char::is_whitespace) {
+        // Only snap back to a word boundary if it doesn't lose too much text.
+        Some(idx) if idx >= limit / 2 => &truncated[..idx],
+        _ => &truncated,
+    };
+    format!("{}…", body.trim_end())
+}
 
 struct FrontmatterFields {
     name: String,
@@ -398,4 +433,32 @@ fn current_platform() -> &'static str {
         all(target_os = "windows", target_arch = "x86_64"),
     )))]
     return "linux-amd64";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_description_is_unchanged() {
+        let d = "A concise skill description.";
+        assert_eq!(cap_description(d), d);
+    }
+
+    #[test]
+    fn long_description_is_capped_within_limit() {
+        let d = "word ".repeat(200); // 1000 chars
+        let out = cap_description(&d);
+        assert!(out.chars().count() <= MAX_DESCRIPTION);
+        assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn cap_respects_char_boundaries_for_multibyte() {
+        let d = "é".repeat(600); // 600 chars, 1200 bytes
+        let out = cap_description(&d);
+        assert!(out.chars().count() <= MAX_DESCRIPTION);
+        // Must not panic and must be valid UTF-8 (guaranteed by String).
+        assert!(out.ends_with('…'));
+    }
 }

@@ -39,6 +39,10 @@ enum Commands {
         /// Override type detection
         #[arg(long, value_parser = ["skill", "plugin", "agent", "app"])]
         r#type: Option<String>,
+        /// Marketplace visibility. "public" submits for review; "private" and
+        /// "loop" stay unlisted (no review).
+        #[arg(long, value_parser = ["public", "private", "loop"], default_value = "public")]
+        visibility: String,
         /// Resume a failed publish
         #[arg(long)]
         resume: bool,
@@ -97,9 +101,10 @@ async fn main() -> anyhow::Result<()> {
         Commands::Publish {
             path,
             r#type,
+            visibility,
             resume,
         } => {
-            publish::run(&path, r#type.as_deref(), resume).await?;
+            publish::run(&path, r#type.as_deref(), &visibility, resume).await?;
         }
         Commands::List => {
             api::list_artifacts().await?;
