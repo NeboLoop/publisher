@@ -41,10 +41,13 @@ fn validate_skill(dir: &Path) -> Result<()> {
     // Name validation
     if let Some(name) = frontmatter.get("name").and_then(|v| v.as_str()) {
         validate_name(name)?;
-        // Check name matches directory
-        let dir_name = dir.file_name().unwrap().to_string_lossy();
-        if name != dir_name.as_ref() {
-            println!("  Warning: name '{name}' doesn't match directory '{dir_name}'");
+        // Check name matches directory. dir.file_name() is None for "." or paths
+        // ending in ".."; canonicalize first so `neboai validate .` still resolves
+        // the real directory name instead of panicking.
+        if let Some(dir_name) = dir_name(dir) {
+            if name != dir_name {
+                println!("  Warning: name '{name}' doesn't match directory '{dir_name}'");
+            }
         }
     }
 
@@ -305,4 +308,17 @@ fn validate_semver(version: &str) -> Result<()> {
 
 fn has_file(dir: &Path, name: &str) -> bool {
     dir.join(name).exists()
+}
+
+/// The final directory-name component, resolving "." and relative paths by
+/// canonicalizing first. Returns None only if even the absolute path has no
+/// final component (e.g. the filesystem root).
+fn dir_name(dir: &Path) -> Option<String> {
+    dir.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .or_else(|| {
+            dir.canonicalize()
+                .ok()
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        })
 }
