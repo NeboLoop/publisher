@@ -541,6 +541,27 @@ mod tests {
     }
 
     #[test]
+    fn display_name_title_cases_the_slug() {
+        assert_eq!(clean_display_name("nebo-design", None), "Nebo Design");
+        assert_eq!(clean_display_name("x-manager", None), "X Manager");
+        assert_eq!(clean_display_name("cold-email", None), "Cold Email");
+        assert_eq!(clean_display_name("seo", None), "Seo");
+    }
+
+    #[test]
+    fn display_name_prefers_explicit_title() {
+        assert_eq!(clean_display_name("nebo-design", Some("Nebo Design Studio")), "Nebo Design Studio");
+        // Blank title falls back to derivation.
+        assert_eq!(clean_display_name("nebo-design", Some("  ")), "Nebo Design");
+    }
+
+    #[test]
+    fn strip_frontmatter_drops_yaml_block() {
+        assert_eq!(strip_frontmatter("---\ntitle: X\n---\nBody here").trim(), "Body here");
+        assert_eq!(strip_frontmatter("No frontmatter").trim(), "No frontmatter");
+    }
+
+    #[test]
     fn cap_respects_char_boundaries_for_multibyte() {
         let d = "é".repeat(600); // 600 chars, 1200 bytes
         let out = cap_description(&d);
