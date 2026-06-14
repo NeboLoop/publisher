@@ -71,8 +71,47 @@ pub async fn run(
         ArtifactType::Plugin => publish_plugin(dir, &account_id, visibility).await?,
         ArtifactType::Agent => publish_agent(dir, &account_id, visibility).await?,
         ArtifactType::App => publish_app(dir, &account_id, visibility).await?,
+        ArtifactType::Connector => publish_connector(dir, &account_id, visibility).await?,
     }
 
+    Ok(())
+}
+
+async fn publish_connector(dir: &Path, account_id: &str, visibility: &str) -> Result<()> {
+    // A connector's manifest IS its MCP config: connector.json is the standard
+    // `mcpServers` block (it may also carry name/description/category/version
+    // metadata alongside — the server ignores the extra keys).
+    let raw = read_file(dir, "connector.json")?;
+    let json: serde_json::Value =
+        serde_json::from_str(&raw).context("connector.json is not valid JSON")?;
+    if json.get("mcpServers").is_none() && json.get("servers").is_none() {
+        bail!("connector.json must contain an 'mcpServers' (or 'servers') object with at least one server");
+    }
+
+    let name = json
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            dir.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "connector".to_string())
+        });
+    let version = json
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("1.0.0")
+        .to_string();
+    let category = category_display_name(json.get("category").and_then(|v| v.as_str()).unwrap_or(""));
+    let description = cap_description(json.get("description").and_then(|v| v.as_str()).unwrap_or(""));
+    let title = json.get("title").and_then(|v| v.as_str());
+
+    println!("Creating connector: {name}");
+    let id = api::create_artifact(account_id, &name, "connector", category, &description, &version, visibility, &raw).await?;
+    println!("  Artifact ID: {id}");
+
+    apply_listing(dir, &id, &name, title).await?;
+    finalize(&id, &name, "Connector", &version, visibility).await?;
     Ok(())
 }
 

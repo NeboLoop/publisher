@@ -24,6 +24,7 @@ pub fn run(path: &str, type_override: Option<&str>) -> Result<()> {
         ArtifactType::Plugin => validate_plugin(dir)?,
         ArtifactType::Agent => validate_agent(dir)?,
         ArtifactType::App => validate_app(dir)?,
+        ArtifactType::Connector => validate_connector(dir)?,
     }
 
     println!("\nValidation passed.");
@@ -218,6 +219,31 @@ fn validate_app(dir: &Path) -> Result<()> {
         println!("  agent.json: valid");
     }
 
+    Ok(())
+}
+
+fn validate_connector(dir: &Path) -> Result<()> {
+    let path = dir.join("connector.json");
+    let json: serde_json::Value = read_json(&path)?;
+
+    // The manifest must be a usable MCP config block: an 'mcpServers' (or
+    // 'servers') object with at least one server, each having a command or url.
+    let servers = json
+        .get("mcpServers")
+        .or_else(|| json.get("servers"))
+        .and_then(|v| v.as_object());
+    let servers = match servers {
+        Some(s) if !s.is_empty() => s,
+        _ => bail!("connector.json must contain a non-empty 'mcpServers' (or 'servers') object"),
+    };
+    for (name, server) in servers {
+        let has_command = server.get("command").and_then(|v| v.as_str()).is_some();
+        let has_url = server.get("url").and_then(|v| v.as_str()).is_some();
+        if !has_command && !has_url {
+            bail!("connector server '{name}' must have a 'command' (stdio) or 'url' (remote)");
+        }
+    }
+    println!("  connector.json: valid ({} server(s))", servers.len());
     Ok(())
 }
 

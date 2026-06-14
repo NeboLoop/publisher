@@ -6,6 +6,7 @@ pub enum ArtifactType {
     Plugin,
     Agent,
     App,
+    Connector,
 }
 
 impl std::fmt::Display for ArtifactType {
@@ -15,6 +16,7 @@ impl std::fmt::Display for ArtifactType {
             ArtifactType::Plugin => write!(f, "plugin"),
             ArtifactType::Agent => write!(f, "agent"),
             ArtifactType::App => write!(f, "app"),
+            ArtifactType::Connector => write!(f, "connector"),
         }
     }
 }
@@ -26,6 +28,7 @@ impl ArtifactType {
             "plugin" => Some(Self::Plugin),
             "agent" => Some(Self::Agent),
             "app" => Some(Self::App),
+            "connector" => Some(Self::Connector),
             _ => None,
         }
     }
@@ -57,6 +60,11 @@ pub fn detect(path: &Path) -> Option<ArtifactType> {
     // Check for Plugin (plugin.json present)
     if path.join("plugin.json").exists() {
         return Some(ArtifactType::Plugin);
+    }
+
+    // Check for Connector (connector.json — an MCP `mcpServers` config block)
+    if path.join("connector.json").exists() {
+        return Some(ArtifactType::Connector);
     }
 
     // Check for Agent (agent.json + AGENT.md)

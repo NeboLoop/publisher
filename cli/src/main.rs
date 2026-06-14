@@ -29,7 +29,7 @@ enum Commands {
         /// Path to the artifact directory
         path: String,
         /// Override type detection
-        #[arg(long, value_parser = ["skill", "plugin", "agent", "app"])]
+        #[arg(long, value_parser = ["skill", "plugin", "agent", "app", "connector"])]
         r#type: Option<String>,
     },
     /// Publish an artifact to NeboLoop
@@ -37,7 +37,7 @@ enum Commands {
         /// Path to the artifact directory
         path: String,
         /// Override type detection
-        #[arg(long, value_parser = ["skill", "plugin", "agent", "app"])]
+        #[arg(long, value_parser = ["skill", "plugin", "agent", "app", "connector"])]
         r#type: Option<String>,
         /// Marketplace visibility. "public" submits for review; "private" and
         /// "loop" stay unlisted (no review).
