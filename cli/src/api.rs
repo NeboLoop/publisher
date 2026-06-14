@@ -240,6 +240,41 @@ pub async fn update_manifest(id: &str, manifest_content: &str) -> Result<()> {
     Ok(())
 }
 
+/// Set the marketplace listing fields (display name + long "What it does"
+/// description) on an artifact via the publisher update endpoint. The handler
+/// merges, so empty fields are left untouched. `long_description` is the
+/// human-facing body from LISTING.md, separate from the SKILL.md the LLM uses.
+pub async fn update_listing(id: &str, name: &str, long_description: Option<&str>) -> Result<()> {
+    let (client, token) = authenticated_client().await?;
+    let base = base_url();
+
+    let mut body = serde_json::Map::new();
+    if !name.is_empty() {
+        body.insert("name".into(), serde_json::Value::String(name.to_string()));
+    }
+    if let Some(ld) = long_description {
+        body.insert("longDescription".into(), serde_json::Value::String(ld.to_string()));
+    }
+    if body.is_empty() {
+        return Ok(());
+    }
+
+    let resp = client
+        .put(format!("{base}/developer/apps/{id}"))
+        .bearer_auth(&token)
+        .json(&serde_json::Value::Object(body))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await?;
+        anyhow::bail!("Failed to update listing ({status}): {body}");
+    }
+
+    Ok(())
+}
+
 pub async fn submit(id: &str, version: &str) -> Result<()> {
     let (client, token) = authenticated_client().await?;
     let base = base_url();
@@ -404,9 +439,13 @@ fn zip_dir(dir: &std::path::Path) -> Result<(Vec<u8>, usize)> {
             .with_context(|| format!("path escapes skill dir: {}", path.display()))?;
         // Normalize to forward slashes; the server matches path components.
         let rel_str = rel.to_string_lossy().replace('\\', "/");
-        // Skip VCS metadata and OS noise; the server drops the rest.
+        // Skip VCS metadata, OS noise, and LISTING.md (uploaded separately as
+        // the marketplace long description, not a runtime skill file).
+        let base = rel.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         if rel_str.split('/').any(|c| c == ".git")
-            || rel.file_name().map(|n| n == ".DS_Store").unwrap_or(false)
+            || base == ".DS_Store"
+            || base == "LISTING.md"
+            || base == "listing.md"
         {
             continue;
         }

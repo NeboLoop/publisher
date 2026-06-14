@@ -94,6 +94,11 @@ async fn publish_skill(dir: &Path, account_id: &str, visibility: &str) -> Result
     let file_count = api::upload_bundle(&id, dir).await?;
     println!("  Uploaded bundle ({file_count} files: SKILL.md + references/scripts/assets)");
 
+    // Set the human marketplace listing: a clean Title Case display name (the
+    // frontmatter name is the lowercase runtime id) and the "What it does" long
+    // description from LISTING.md, if present.
+    apply_listing(dir, &id, &name, fm.title.as_deref()).await?;
+
     finalize(&id, &name, "Skill", &version, visibility).await?;
     Ok(())
 }
@@ -167,6 +172,7 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
         bail!("No platform binaries found in dist/plugin/. Run ./build.sh first. Expected at least one of: {PLATFORMS:?}");
     }
 
+    apply_listing(dir, &id, &name, None).await?;
     finalize(&id, &name, "Plugin", &version, visibility).await?;
     Ok(())
 }
@@ -194,6 +200,7 @@ async fn publish_agent(dir: &Path, account_id: &str, visibility: &str) -> Result
     )
     .await?;
 
+    apply_listing(dir, &id, &name, fm.title.as_deref()).await?;
     finalize(&id, &name, "Agent", &version, visibility).await?;
     Ok(())
 }
@@ -262,6 +269,7 @@ async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<(
         }
     }
 
+    apply_listing(dir, &id, &name, fm.as_ref().and_then(|f| f.title.as_deref())).await?;
     finalize(&id, &name, "App", &version, visibility).await?;
     Ok(())
 }
@@ -312,6 +320,79 @@ struct FrontmatterFields {
     version: Option<String>,
     description: String,
     category: Option<String>,
+    /// Optional human display name for the marketplace listing. When absent we
+    /// Title Case the (lowercase) `name`.
+    title: Option<String>,
+}
+
+/// Clean Title Case display name for the marketplace, from an explicit
+/// frontmatter `title` or derived from the lowercase-hyphen runtime `name`
+/// ("nebo-design" -> "Nebo Design", "x-manager" -> "X Manager").
+fn clean_display_name(name: &str, title: Option<&str>) -> String {
+    if let Some(t) = title {
+        let t = t.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    name.split(|c| c == '-' || c == '_')
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Read the marketplace long description from LISTING.md (the publisher's
+/// human "What it does" body), stripping YAML frontmatter if present. Returns
+/// None when there's no LISTING.md. This is separate from SKILL.md, which is
+/// for the LLM at runtime.
+fn read_listing(dir: &Path) -> Option<String> {
+    let path = if dir.join("LISTING.md").exists() {
+        dir.join("LISTING.md")
+    } else if dir.join("listing.md").exists() {
+        dir.join("listing.md")
+    } else {
+        return None;
+    };
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let body = strip_frontmatter(&raw).trim().to_string();
+    (!body.is_empty()).then_some(body)
+}
+
+/// Drop a leading `---`-delimited YAML frontmatter block, returning the body.
+fn strip_frontmatter(content: &str) -> &str {
+    let trimmed = content.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("---") {
+        if let Some(end) = rest.find("\n---") {
+            // Skip past the closing delimiter line.
+            if let Some(nl) = rest[end + 1..].find('\n') {
+                return &rest[end + 1 + nl + 1..];
+            }
+        }
+    }
+    content
+}
+
+/// Set the human marketplace listing for a freshly created artifact: a clean
+/// display name (slug stays the lowercase runtime id) and, if a LISTING.md is
+/// present, the long "What it does" description. Both go through the publisher
+/// update endpoint, which merges — omitted fields keep their current value.
+async fn apply_listing(dir: &Path, id: &str, name: &str, title: Option<&str>) -> Result<()> {
+    let display_name = clean_display_name(name, title);
+    let long_description = read_listing(dir);
+    api::update_listing(id, &display_name, long_description.as_deref()).await?;
+    if long_description.is_some() {
+        println!("  Listing: name \"{display_name}\" + LISTING.md long description");
+    } else {
+        println!("  Listing: name \"{display_name}\"");
+    }
+    Ok(())
 }
 
 /// Map a category slug (as used in plugin.json / frontmatter) to the marketplace
@@ -364,11 +445,17 @@ fn extract_frontmatter_fields(content: &str) -> Result<FrontmatterFields> {
         .or_else(|| yaml.get("version").and_then(|v| v.as_str()))
         .map(|s| s.to_string());
 
+    let title = yaml
+        .get("title")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     Ok(FrontmatterFields {
         name,
         version,
         description,
         category,
+        title,
     })
 }
 
