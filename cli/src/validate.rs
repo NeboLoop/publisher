@@ -25,6 +25,7 @@ pub fn run(path: &str, type_override: Option<&str>) -> Result<()> {
         ArtifactType::Agent => validate_agent(dir)?,
         ArtifactType::App => validate_app(dir)?,
         ArtifactType::Connector => validate_connector(dir)?,
+        ArtifactType::Collection => validate_collection(dir)?,
     }
 
     println!("\nValidation passed.");
@@ -244,6 +245,28 @@ fn validate_connector(dir: &Path) -> Result<()> {
         }
     }
     println!("  connector.json: valid ({} server(s))", servers.len());
+    Ok(())
+}
+
+fn validate_collection(dir: &Path) -> Result<()> {
+    let json: serde_json::Value = read_json(&dir.join("collection.json"))?;
+    if json.get("name").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+        bail!("collection.json must have a non-empty 'name'");
+    }
+    // items is optional (can be added later) but if present each needs id + type.
+    if let Some(items) = json.get("items").and_then(|v| v.as_array()) {
+        for (i, item) in items.iter().enumerate() {
+            if item.get("targetId").and_then(|v| v.as_str()).is_none() {
+                bail!("collection.json item {i} is missing 'targetId'");
+            }
+            if item.get("targetType").and_then(|v| v.as_str()).is_none() {
+                bail!("collection.json item {i} is missing 'targetType'");
+            }
+        }
+        println!("  collection.json: valid ({} item(s))", items.len());
+    } else {
+        println!("  collection.json: valid (no items yet)");
+    }
     Ok(())
 }
 

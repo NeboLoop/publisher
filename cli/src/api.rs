@@ -240,6 +240,72 @@ pub async fn update_manifest(id: &str, manifest_content: &str) -> Result<()> {
     Ok(())
 }
 
+/// Create a collection (a bundle of existing artifacts). Returns its ID.
+pub async fn create_collection(
+    name: &str,
+    description: &str,
+    visibility: &str,
+) -> Result<String> {
+    let (client, token) = authenticated_client().await?;
+    let base = base_url();
+
+    let body = serde_json::json!({
+        "name": name,
+        "description": description,
+        "visibility": visibility,
+    });
+
+    let resp = client
+        .post(format!("{base}/collections"))
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await?;
+        anyhow::bail!("Failed to create collection ({status}): {body}");
+    }
+
+    let val: serde_json::Value = resp.json().await?;
+    val.get("id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .context("collection create response missing id")
+}
+
+/// Add an existing artifact to a collection by its ID and type.
+pub async fn add_collection_item(
+    collection_id: &str,
+    target_id: &str,
+    target_type: &str,
+    position: i64,
+) -> Result<()> {
+    let (client, token) = authenticated_client().await?;
+    let base = base_url();
+
+    let body = serde_json::json!({
+        "targetId": target_id,
+        "targetType": target_type,
+        "position": position,
+    });
+
+    let resp = client
+        .post(format!("{base}/collections/{collection_id}/items"))
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await?;
+        anyhow::bail!("Failed to add collection item {target_id} ({status}): {body}");
+    }
+    Ok(())
+}
+
 /// Set the marketplace listing fields (display name + long "What it does"
 /// description) on an artifact via the publisher update endpoint. The handler
 /// merges, so empty fields are left untouched. `long_description` is the

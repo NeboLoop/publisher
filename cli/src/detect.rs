@@ -7,6 +7,7 @@ pub enum ArtifactType {
     Agent,
     App,
     Connector,
+    Collection,
 }
 
 impl std::fmt::Display for ArtifactType {
@@ -17,6 +18,7 @@ impl std::fmt::Display for ArtifactType {
             ArtifactType::Agent => write!(f, "agent"),
             ArtifactType::App => write!(f, "app"),
             ArtifactType::Connector => write!(f, "connector"),
+            ArtifactType::Collection => write!(f, "collection"),
         }
     }
 }
@@ -29,6 +31,7 @@ impl ArtifactType {
             "agent" => Some(Self::Agent),
             "app" => Some(Self::App),
             "connector" => Some(Self::Connector),
+            "collection" => Some(Self::Collection),
             _ => None,
         }
     }
@@ -65,6 +68,11 @@ pub fn detect(path: &Path) -> Option<ArtifactType> {
     // Check for Connector (connector.json — an MCP `mcpServers` config block)
     if path.join("connector.json").exists() {
         return Some(ArtifactType::Connector);
+    }
+
+    // Check for Collection (collection.json — a bundle of existing artifacts)
+    if path.join("collection.json").exists() {
+        return Some(ArtifactType::Collection);
     }
 
     // Check for Agent (agent.json + AGENT.md)

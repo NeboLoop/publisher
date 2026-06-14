@@ -72,8 +72,53 @@ pub async fn run(
         ArtifactType::Agent => publish_agent(dir, &account_id, visibility).await?,
         ArtifactType::App => publish_app(dir, &account_id, visibility).await?,
         ArtifactType::Connector => publish_connector(dir, &account_id, visibility).await?,
+        ArtifactType::Collection => publish_collection(dir, &account_id, visibility).await?,
     }
 
+    Ok(())
+}
+
+async fn publish_collection(dir: &Path, _account_id: &str, visibility: &str) -> Result<()> {
+    // A collection bundles existing artifacts. collection.json carries the
+    // metadata plus an `items` array of {targetId, targetType}.
+    let raw = read_file(dir, "collection.json")?;
+    let json: serde_json::Value =
+        serde_json::from_str(&raw).context("collection.json is not valid JSON")?;
+    let name = json
+        .get("name")
+        .and_then(|v| v.as_str())
+        .context("collection.json must have a 'name'")?
+        .to_string();
+    let description = cap_description(json.get("description").and_then(|v| v.as_str()).unwrap_or(""));
+    let version = json
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("1.0.0")
+        .to_string();
+    let title = json.get("title").and_then(|v| v.as_str());
+    let items = json.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+    println!("Creating collection: {name}");
+    let id = api::create_collection(&name, &description, visibility).await?;
+    println!("  Collection ID: {id}");
+
+    for (i, item) in items.iter().enumerate() {
+        let target_id = item
+            .get("targetId")
+            .and_then(|v| v.as_str())
+            .with_context(|| format!("collection item {i} is missing 'targetId'"))?;
+        let target_type = item
+            .get("targetType")
+            .and_then(|v| v.as_str())
+            .with_context(|| format!("collection item {i} is missing 'targetType'"))?;
+        api::add_collection_item(&id, target_id, target_type, i as i64).await?;
+    }
+    if !items.is_empty() {
+        println!("  Added {} item(s)", items.len());
+    }
+
+    apply_listing(dir, &id, &name, title).await?;
+    finalize(&id, &name, "Collection", &version, visibility).await?;
     Ok(())
 }
 
