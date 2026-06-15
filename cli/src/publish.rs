@@ -34,6 +34,7 @@ const PLATFORMS: &[&str] = &[
     "linux-arm64",
     "linux-amd64",
     "windows-amd64",
+    "windows-arm64",
 ];
 
 pub async fn run(
