@@ -159,7 +159,7 @@ The CLI auto-detects what you're publishing:
 
 | Present in Directory | Detected As |
 |---------------------|-------------|
-| `manifest.json` with `"artifact_type": "app"` | App |
+| `manifest.json` with `"type": "app"` (or legacy `"artifact_type": "app"`) | App |
 | `plugin.json` | Plugin |
 | `agent.json` + `AGENT.md` | Agent |
 | `SKILL.md` (alone) | Skill |
@@ -274,8 +274,7 @@ Outputs binaries to `dist/` for each platform.
    - `ui/index.html` exists (apps)
 
 3. **`neboai publish <dir>`** — Validates, then:
-   - Creates or updates the artifact on NeboLoop
-   - Uploads manifest (SKILL.md / AGENT.md / PLUGIN.md)
+   - Creates the artifact on NeboLoop, sending the manifest (SKILL.md / AGENT.md / PLUGIN.md) as `manifestContent`
    - Uploads config (agent.json / plugin.json) — NEVER manifest.json
    - Uploads binaries per-platform (plugins, app sidecars)
    - Submits for review

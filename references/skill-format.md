@@ -15,15 +15,19 @@ my-skill/
 ---
 name: my-skill
 description: "One-line description of what this skill does."
+plugins:
+  - name: gws
+    version: ">=1.2.0"
+    optional: false
+requires:
+  - name: gws-shared
+    version: "*"
 metadata:
-  version: 1.0.0
-  openclaw:
-    category: "productivity"
-    requires:
-      bins:
-        - gws
-      skills:
-        - gws-shared
+  secrets:
+    - key: SERVICE_API_KEY
+      label: "Service API Key"
+      hint: "https://service.example.com/keys"
+      required: true
 triggers:
   - keyword one
   - keyword two
@@ -38,21 +42,28 @@ Instructions, examples, and code blocks here.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | string | Skill identifier (lowercase, hyphens). Must match directory name. |
-| `description` | string | What the skill does and when to trigger it. Primary trigger mechanism. |
+| `name` | string | Skill identifier (lowercase letters, digits, hyphens). Must not start or end with a hyphen. Must not contain consecutive hyphens (`--`). |
+| `description` | string | What the skill does and when to trigger it. Used by the LLM for routing decisions. |
 
 ## Optional Fields (Nebo Extensions)
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `version` | string | `1.0.0` | Semantic version |
-| `capabilities` | string[] | `[]` | Platform capabilities needed: `storage`, `network`, `vision`, `python`, `typescript` |
-| `triggers` | string[] | `[]` | Phrases that activate the skill (case-insensitive substring) |
+| `version` | string | `"1.0.0"` | Semantic version |
+| `license` | string | | License identifier (e.g., `MIT`, `Apache-2.0`) |
+| `author` | string | | Skill author name or handle |
+| `tags` | string[] | `[]` | Categorization tags for discovery |
+| `capabilities` | string[] | `[]` | Platform capabilities needed: `storage`, `network`, `vision`, `python`, `typescript`, `calendar`, `email`, `browser`, `notification`. Only `storage`/`network` map to sandbox config and `python`/`typescript` trigger sandboxed execution; the rest are declarative metadata. |
+| `triggers` | string[] | `[]` | Phrases for programmatic activation (case-insensitive substring matching) |
+| `compatibility` | string | | Free-text compatibility notes (max 500 chars) |
+| `allowed-tools` | string[] | `[]` | Space-delimited tool patterns to pre-approve (alias: `allowed_tools`) |
 | `platform` | string[] | `[]` (all) | OS filter: `macos`, `linux`, `windows` |
 | `priority` | int | `0` | Higher = matched first when multiple skills match |
 | `max_turns` | int | `0` | Max agent turns (0 = unlimited) |
-| `dependencies` | string[] | `[]` | Other skill qualified names this depends on |
-| `plugins` | object[] | `[]` | Plugin dependencies |
+| `metadata` | HashMap | `{}` | Arbitrary key-value metadata; includes `secrets` array for secret declarations |
+| `requires` | object[] | `[]` | Skill-to-skill dependencies: `[{name, version}]`. Version defaults to `"*"` |
+| `dependencies` | string[] | `[]` | Legacy bare-name skill dependencies (prefer `requires`) |
+| `plugins` | object[] | `[]` | Plugin dependencies: `[{name, version, optional}]` |
 
 ## Plugin Dependencies
 
@@ -62,6 +73,27 @@ plugins:
     version: ">=1.2.0"
     optional: false
 ```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | (required) | Plugin slug |
+| `version` | string | `"*"` | Semver range |
+| `optional` | bool | `false` | If true, skill works without it |
+
+## Secret Declarations
+
+Declare secrets your skill needs in `metadata.secrets`. Users are prompted for values at install time:
+
+```yaml
+metadata:
+  secrets:
+    - key: SERVICE_API_KEY
+      label: "Service API Key"
+      hint: "https://service.example.com/keys"
+      required: true
+```
+
+Access secrets at runtime via the `${secret.KEY}` template variable.
 
 ## Progressive Disclosure
 
@@ -77,8 +109,8 @@ Available in SKILL.md body and scripts (expanded at runtime by Nebo):
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `${NEBO_SKILL_DIR}` | `~/.nebo/nebo/skills/my-skill` | Skill code directory |
-| `${NEBO_DATA_DIR}` | `~/.nebo/appdata/skills/my-skill` | Persistent data directory (separate from code) |
+| `${NEBO_SKILL_DIR}` | `<platform data dir>/nebo/skills/my-skill` | Skill code directory |
+| `${NEBO_DATA_DIR}` | `<platform data dir>/appdata/skills/my-skill` | Persistent data directory (separate from code) |
 | `${NEBO_USER_NAME}` | `Alex` | User's display name |
 | `${NEBO_OS}` | `macos` | Operating system |
 | `${NEBO_ARCH}` | `aarch64` | CPU architecture |
@@ -86,6 +118,8 @@ Available in SKILL.md body and scripts (expanded at runtime by Nebo):
 | `${secret.KEY}` | `sk-abc...` | Decrypted secret value |
 
 **Data directory is separate from code directory.** `${NEBO_DATA_DIR}` survives upgrades and reinstalls. Store databases, caches, generated files there — never in `${NEBO_SKILL_DIR}`.
+
+The platform data dir is OS-native: `~/Library/Application Support/Nebo` (macOS), `~/.local/share/nebo` (Linux), `%APPDATA%\Nebo` (Windows). Override the root with `NEBO_HOME`.
 
 ## Loading Order
 
@@ -115,7 +149,7 @@ The CLI will:
 - No duplicate fields — YAML keys must be unique within a block
 - Triggers go inside the frontmatter `---` block, not after it
 - Description should include both what the skill does AND when to use it
-- Name in frontmatter MUST match the directory name
+- Name must be lowercase with letters, digits, and hyphens only (no leading/trailing/consecutive hyphens)
 
 ## Compatibility
 

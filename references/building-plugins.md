@@ -40,7 +40,7 @@ If Rust is not an option, use Go as a fallback. Never use interpreted languages 
 
 ### Command Pattern
 
-Every tool invocation calls your binary with a command string:
+Every tool invocation calls your binary with CLI subcommand args from the `command` field, then pipes the tool's input data as JSON on **stdin**:
 
 ```json
 {
@@ -50,21 +50,20 @@ Every tool invocation calls your binary with a command string:
 }
 ```
 
-Nebo runs: `$PLUGIN_BIN gmail triage --input '{"..."}' `
+Nebo runs: `echo '{"..."}' | $PLUGIN_BIN gmail triage`
 
-Design your binary as a subcommand CLI:
+The `command` field provides the CLI subcommand args. The `inputSchema` data is delivered as a JSON object on **stdin**, NOT as CLI arguments. Design your binary to read stdin for tool input:
 
 ```
-my-plugin auth login
+echo '{}' | my-plugin gmail triage
+echo '{"to":"..."}' | my-plugin gmail send
+my-plugin auth login          # auth commands may not need stdin input
 my-plugin auth status
-my-plugin gmail triage --input '{...}'
-my-plugin gmail send --input '{...}'
-my-plugin calendar events --input '{...}'
 ```
 
 ### Input/Output Contract
 
-**Input:** JSON on stdin or via `--input` flag. Match your `inputSchema` exactly.
+**Input:** JSON on stdin matching your `inputSchema`. The tool's input data always arrives on stdin, not as CLI flags.
 
 **Output:** JSON on stdout. Structure:
 
@@ -120,7 +119,7 @@ Recommended full set:
 [package]
 name = "my-plugin"
 version = "1.0.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -191,7 +190,7 @@ echo "Done. Binaries in dist/"
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read};
 
 #[derive(Parser)]
 #[command(name = "my-plugin", version)]
@@ -224,15 +223,9 @@ enum AuthAction {
 #[derive(Subcommand)]
 enum ServiceAction {
     /// List items
-    List {
-        #[arg(long)]
-        input: Option<String>,
-    },
+    List,
     /// Create an item
-    Create {
-        #[arg(long)]
-        input: Option<String>,
-    },
+    Create,
 }
 
 fn main() {
@@ -254,18 +247,13 @@ fn main() {
     }
 }
 
-fn read_input(input_arg: Option<String>) -> serde_json::Value {
-    match input_arg {
-        Some(s) => serde_json::from_str(&s).unwrap_or_default(),
-        None => {
-            let mut buf = String::new();
-            if atty::isnt(atty::Stream::Stdin) {
-                io::stdin().read_to_string(&mut buf).ok();
-                serde_json::from_str(&buf).unwrap_or_default()
-            } else {
-                serde_json::Value::Object(Default::default())
-            }
-        }
+fn read_input() -> serde_json::Value {
+    if !io::stdin().is_terminal() {
+        let mut buf = String::new();
+        io::stdin().read_to_string(&mut buf).ok();
+        serde_json::from_str(&buf).unwrap_or_default()
+    } else {
+        serde_json::Value::Object(Default::default())
     }
 }
 
@@ -286,12 +274,12 @@ fn handle_auth(action: AuthAction) -> anyhow::Result<serde_json::Value> {
 
 fn handle_service(action: ServiceAction) -> anyhow::Result<serde_json::Value> {
     match action {
-        ServiceAction::List { input } => {
-            let _params = read_input(input);
+        ServiceAction::List => {
+            let _params = read_input();
             Ok(json!({"items": [], "total": 0}))
         }
-        ServiceAction::Create { input } => {
-            let params = read_input(input);
+        ServiceAction::Create => {
+            let params = read_input();
             Ok(json!({"created": params}))
         }
     }
@@ -300,10 +288,10 @@ fn handle_service(action: ServiceAction) -> anyhow::Result<serde_json::Value> {
 
 This skeleton gives you:
 - clap for ergonomic CLI parsing
-- JSON in/out contract
+- JSON in/out contract (input on stdin, output on stdout)
 - Structured error handling
 - Auth subcommands
-- Input from `--input` flag or stdin
+- `std::io::IsTerminal` to detect piped stdin (no external crates needed)
 
 ## Tool Design
 
@@ -376,17 +364,17 @@ Include: what it does, when to use it, what it requires.
 
 ### Approval Gates
 
-Set `"approval": true` for destructive or costly actions:
+Tool `approval` **defaults to `true`** — all tools require user confirmation unless you explicitly set `"approval": false`. Set `false` only for read-only, non-destructive tools:
 
 ```json
 {
-  "name": "gmail.send",
-  "approval": true,
-  "description": "Send an email. Requires user confirmation before sending."
+  "name": "gmail.search",
+  "approval": false,
+  "description": "Search Gmail messages. Read-only, no confirmation needed."
 }
 ```
 
-The user gets a confirmation prompt before execution. Use for:
+Keep the default `true` for:
 - Sending messages (email, Slack, SMS)
 - Deleting data
 - Making purchases
@@ -395,7 +383,7 @@ The user gets a confirmation prompt before execution. Use for:
 
 ### Timeouts
 
-Set realistic timeouts per tool:
+Tool `timeoutSeconds` **defaults to `120`**. Override with a shorter value for fast operations, or request a longer one when needed:
 
 ```json
 {
@@ -404,12 +392,12 @@ Set realistic timeouts per tool:
 }
 ```
 
-| Operation | Timeout |
+| Operation | Suggested Timeout |
 |-----------|---------|
 | Simple lookup | 10s |
 | API call with auth | 30s |
 | File processing | 60s |
-| Long-running batch | 120s |
+| Long-running batch | 120s (the default) |
 
 Never exceed `permissions.maxTimeoutSeconds`.
 
@@ -550,6 +538,44 @@ skills/
   calendar-ops/
     SKILL.md      # When to create events, conflict detection, timezone handling
 ```
+
+## Channel Plugins (Bridges)
+
+Channel plugins bridge Nebo to external messaging platforms (Slack, Discord, etc.). They run as long-lived sidecar processes using NDJSON over stdin/stdout.
+
+By default Nebo spawns one bridge per `(agent_id, plugin_slug)` — each agent gets its own process and credentials. Set `channel.shared: true` in `plugin.json` to run a single bridge shared across all agents; inbound platform events carry the target agent's name and Nebo routes each message to the matching agent. Use the per-agent default unless your platform genuinely has one connection for all agents.
+
+### NDJSON Protocol
+
+The bridge communicates with Nebo via newline-delimited JSON on stdin (commands from Nebo) and stdout (events to Nebo):
+
+```json
+{"type": "message", "channel": "C12345", "text": "Hello from Slack", "user": "U99999"}
+{"type": "reaction", "channel": "C12345", "emoji": "thumbsup", "user": "U99999"}
+```
+
+All messaging operations (post, reply, upload, DM) flow through this stdin/stdout protocol — NOT through CLI subcommands.
+
+### Mandatory Stdin EOF Exit Contract
+
+**Every long-running sidecar must self-exit when stdin reaches EOF.** This is critical for orphan prevention — if the host process is killed (including via SIGKILL, which cannot be caught), the pipe closes and stdin returns EOF. Your bridge must detect this and exit cleanly:
+
+```rust
+use std::io::{self, BufRead};
+
+// In your main read loop:
+let stdin = io::stdin().lock();
+for line in stdin.lines() {
+    match line {
+        Ok(line) => handle_command(&line),
+        Err(_) => break, // stdin closed — host is gone, exit
+    }
+}
+// Clean up and exit
+std::process::exit(0);
+```
+
+Without this contract, bridge processes become orphans that survive host restarts and accumulate indefinitely.
 
 ## Testing Checklist
 

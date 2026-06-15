@@ -35,6 +35,15 @@ description: Extract text and tables from PDF files, fill PDF forms, merge multi
 
 Always answer both questions in under 1024 characters.
 
+## Description vs Triggers
+
+These two fields serve different purposes:
+
+- **`description`** is evaluated by the LLM to decide which skill best fits the user's intent. Write it for an AI audience -- be precise about capabilities and use cases.
+- **`triggers`** are for programmatic substring matching against the user's message. They fire before the LLM even sees the request. Write them as literal phrases users type.
+
+Both can cause activation, but through different mechanisms. A skill with a great description but no triggers relies entirely on LLM routing. A skill with great triggers but a vague description will activate but may confuse the agent about what to do.
+
 ## Triggers That Work
 
 Triggers are case-insensitive substring matches. Think about what users actually type:
@@ -140,7 +149,7 @@ capabilities: [vision, storage]
 | `calendar` | You read or write calendar events |
 | `email` | You access the inbox or send mail |
 | `browser` | You navigate web pages |
-| `notification` | You send push notifications |
+| `notification` | You alert the user (desktop/os notification) |
 
 ## Scripts That Work
 
@@ -177,18 +186,55 @@ if __name__ == "__main__":
 
 ## Plugin Dependencies
 
-If your skill requires a plugin's tools:
+If your skill requires a plugin's tools, declare them in the top-level `plugins:` field with object format:
 
 ```yaml
-metadata:
-  requires:
-    plugins:
-      - gws
-    skills:
-      - gws-shared
+plugins:
+  - name: gws
+    version: ">=1.2.0"
+    optional: false
 ```
 
 This tells Nebo to auto-install the plugin when the skill is installed. Without this, the skill's instructions reference tools that don't exist.
+
+## Skill-to-Skill Dependencies
+
+If your skill depends on other skills, declare them in the top-level `requires:` field:
+
+```yaml
+requires:
+  - name: gws-shared
+    version: "*"
+```
+
+Each entry takes `name` (required) and `version` (defaults to `"*"`).
+
+## Pre-Approving Tools
+
+Use `allowed-tools` to pre-approve tool patterns so users are not prompted for each one:
+
+```yaml
+allowed-tools:
+  - "system file *"
+  - "web http get"
+```
+
+Patterns are space-delimited and match against the STRAP tool path.
+
+## Secret Declarations
+
+Declare secrets your skill needs in `metadata.secrets`. Users are prompted for values at install time:
+
+```yaml
+metadata:
+  secrets:
+    - key: SERVICE_API_KEY
+      label: "Service API Key"
+      hint: "https://service.example.com/keys"
+      required: true
+```
+
+Access secret values at runtime via `${secret.SERVICE_API_KEY}`.
 
 ## Testing Your Skill
 

@@ -40,7 +40,9 @@ my-plugin/
     "darwin-arm64": {
       "binaryName": "my-plugin",
       "sha256": "<hash>",
-      "size": 12345678
+      "signature": "<ed25519-signature>",
+      "size": 12345678,
+      "downloadUrl": "https://cdn.neboai.com/plugins/my-plugin/1.0.0/darwin-arm64/my-plugin"
     }
   },
   "envVar": "MY_PLUGIN_BIN",
@@ -56,6 +58,11 @@ my-plugin/
     "type": "oauth_cli",
     "label": "My Account",
     "description": "Authenticate to access the service.",
+    "help": {
+      "url": "https://example.com/docs/auth",
+      "urlLabel": "Setup instructions",
+      "text": "Authenticate to access the service."
+    },
     "commands": {
       "login": "auth login",
       "status": "auth status",
@@ -88,10 +95,35 @@ my-plugin/
 | Field | Rule |
 |-------|------|
 | `id` | Required. Use the slug. Deserialization fails without it. |
-| `slug` | Lowercase alphanumeric + hyphens. No leading/trailing hyphens. Max 64 chars. |
+| `slug` | Lowercase alphanumeric + hyphens. No leading/trailing hyphens. No consecutive hyphens. Max 64 chars. |
 | `version` | Valid semver (e.g., `"1.2.3"`, not `"latest"`). |
 | `platforms` | At least one platform entry. |
 | `binaryName` | No path separators. No `..`. Cannot be empty. |
+
+## Optional plugin.json Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `channel` | PluginChannel | Channel bridge configuration (for messaging platform plugins). Set `channel.shared: true` to run one bridge process shared across all agents (incoming messages routed to agents by name); otherwise each agent gets its own bridge. |
+| `events` | Vec\<PluginEventDef\> | Event definitions the plugin can emit. |
+| `dependencies` | Vec\<PluginDependency\> | Other plugins this plugin depends on. |
+| `triggers` | Vec\<String\> | Trigger phrases that activate the plugin. |
+| `signingKeyId` | String | ID of the ED25519 signing key used to verify binaries. |
+| `envVar` | String | Environment variable name for the binary path (e.g., `"GWS_BIN"`). |
+| `setup` | ArtifactSetup | Post-install setup instructions or steps. |
+| `category` | String | Marketplace category for discovery. |
+
+## PlatformBinary Fields
+
+Each entry under `platforms` has 5 fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `binaryName` | Yes | Filename of the executable. No path separators or `..`. |
+| `sha256` | Yes | SHA-256 hash of the binary for verification. |
+| `signature` | Yes | ED25519 signature for authenticity verification. |
+| `size` | Yes | Binary file size in bytes. |
+| `downloadUrl` | Yes | CDN URL to download the binary. |
 
 ## PLUGIN.md
 
@@ -125,6 +157,9 @@ Typed, schema-validated tools the agent can call:
   "timeoutSeconds": 120
 }
 ```
+
+- `approval` defaults to `true`. Set `false` explicitly for read-only tools.
+- `timeoutSeconds` defaults to `120`. Override as needed.
 
 ### Hooks
 Intercept lifecycle events:
@@ -192,10 +227,11 @@ At minimum, target `darwin-arm64` and `linux-amd64`.
 
 ## Critical Rules
 
-- **Hardcode all values in plugin.json.** No template variables like `{{gcp_project}}`.
+- **Hardcode all static config values in plugin.json.** No template variables like `{{gcp_project}}` in static fields. However, `events[].command` fields DO support `{{key}}` substitution from agent inputs at runtime.
 - **Binary must be a single executable file** — no runtime dependencies.
 - **`id` field is required** — without it, the plugin cannot be resolved.
-- **`auth.commands.login` must be non-empty** if `auth` is present.
+- **`auth.commands.login` must be non-empty** if `auth` is present (unless `auth.type` is `"env"`, which uses env vars and needs no login command). `auth.commands.status` and `auth.commands.logout` are optional.
+- **`auth.env`** passes environment variables to auth commands. `auth.description` is user-facing setup text. `auth.help` is a structured object (`url`, `urlLabel`, `text`) shown in configuration modals — not a plain string.
 
 ## Publishing
 

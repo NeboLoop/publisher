@@ -12,15 +12,6 @@ The AGENT.md defines who the agent IS — its personality, judgment, and boundar
 ---
 name: agent-name
 description: One-line job description. This determines marketplace discovery.
-triggers:
-  - phrase users say
-  - another trigger
-metadata:
-  version: "1.0.0"
-  category: productivity
-  requires:
-    plugins:
-      - gws
 ---
 # Agent Name
 
@@ -95,6 +86,7 @@ This agent has clear identity, constraints, and decision rules. It will produce 
 | `heartbeat` (interval) | Polling: check inbox every 5 min, monitor feeds |
 | `event` (EventBus) | Reactive: new email → respond, file change → process |
 | `watch` (NDJSON) | Real-time: plugin streams events continuously |
+| `folder` | File system changes: new PDF in downloads, config file updated |
 | `manual` | User-initiated only: "run my report" |
 
 ### Choosing Cron vs. Heartbeat
@@ -144,6 +136,16 @@ Break workflows into activities that each do ONE thing:
 }
 ```
 
+Activities also support these optional fields:
+
+| Field | Description |
+|-------|-------------|
+| `type` | Activity type: `custom`, `research`, `email`, `notify`, `code`, `condition`, `loop`, `wait`, `agent`, `connector`, `http`, `transform` |
+| `model` | Per-activity model override — fuzzy names like `"sonnet"`, `"haiku"`, `"opus"` (resolved to full model IDs by the selector) |
+| `mcps` | MCP server references for the activity |
+| `cmds` | Workflow commands to execute |
+| `params` | Arbitrary JSON parameters passed to the activity |
+
 **Why decompose:**
 - Each activity gets its own token budget → controlled costs
 - Failures are isolated → if email scan fails, calendar still works
@@ -154,7 +156,7 @@ Break workflows into activities that each do ONE thing:
 
 Activities have `token_budget.max`. The workflow has `budget.total_per_run`.
 
-**Rule:** Sum of all activity budgets ≤ total_per_run.
+**Guideline:** Keep the sum of all activity budgets ≤ total_per_run. This sum-vs-total check is enforced at parse time only for standalone `workflow.json` files — for inline activity bindings in `agent.json` it is NOT validated at load time, so keep them consistent yourself. Per-activity and global budgets are enforced independently at runtime either way.
 
 ```json
 {
@@ -181,20 +183,20 @@ Activities have `token_budget.max`. The workflow has `budget.total_per_run`.
   "intent": "...",
   "on_error": {
     "retry": 2,
-    "fallback": "skip"
+    "fallback": "notify_owner"
   }
 }
 ```
 
 | fallback | Behavior |
 |----------|----------|
-| `"skip"` | Skip this activity, continue workflow |
+| `"notify_owner"` | Skip and notify the user (default) |
+| `"skip"` | Skip this activity silently, continue workflow |
 | `"abort"` | Stop the entire workflow |
-| `"notify"` | Skip but send error notification to user |
 
+**Use `"notify_owner"` when:** The user should know something went wrong but it's not critical (this is the default).
 **Use `"skip"` when:** The activity is enrichment (nice to have, not critical).
 **Use `"abort"` when:** Later activities depend on this one's output.
-**Use `"notify"` when:** The user should know something went wrong but it's not critical.
 
 ### Skill References
 
@@ -210,6 +212,54 @@ Activities have `token_budget.max`. The workflow has `budget.total_per_run`.
 Skills in an activity's `skills` array are loaded into that activity's context. The agent uses them to know *how* to use tools.
 
 **Don't reference skills you don't need.** Each skill loaded costs tokens against the activity budget.
+
+### Tools and Scopes
+
+Agent-level `tools` and `scopes` in agent.json apply to all agents, not just apps with sidecars:
+
+```json
+{
+  "tools": [
+    {
+      "name": "lookup_client",
+      "description": "Look up a client by name or ID",
+      "method": "GET",
+      "path": "/clients/{id}"
+    }
+  ],
+  "scopes": {
+    "read": { "tools": ["lookup_client"], "skills": [], "plugins": [] },
+    "full": { "tools": ["lookup_client", "update_client"], "skills": [], "plugins": [] }
+  }
+}
+```
+
+### Workflow Bindings
+
+Each workflow binding also supports:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `inputs` | object | Default inputs passed to the workflow on trigger |
+| `emit` | string (optional) | Event name emitted when the workflow completes |
+| `connections` | array | List of `WorkflowConnection` edges wiring activities together |
+
+Each `WorkflowConnection` has `from`, `to`, and an optional `label` (the branch label for condition/loop nodes, e.g. `"True"`, `"False"`, `"Each item"`, `"Done"`). There is no `condition` field.
+
+```json
+{
+  "workflows": {
+    "gather-data": {
+      "trigger": { "type": "schedule", "cron": "0 7 * * *" },
+      "emit": "data_ready",
+      "connections": [
+        { "from": "gather", "to": "summarize", "label": "True" }
+      ],
+      "activities": [...]
+    }
+  }
+}
+```
 
 ## Input Design
 
@@ -245,7 +295,7 @@ If `required: true`, the user MUST fill it before the agent activates. Only use 
 
 ### Template Variables
 
-Inputs become `{{key}}` template variables in watch commands:
+Inputs become `{{key}}` template variables, substituted ONLY in the watch trigger `command` and the folder trigger `path`. Schedule/cron, interval, and other trigger configs receive the raw value with no substitution.
 
 ```json
 {
@@ -287,10 +337,6 @@ Inputs become `{{key}}` template variables in watch commands:
 - What happens when a plugin is disconnected? (OAuth expired)
 - What happens when the user hasn't configured inputs?
 - Does the silence condition work? (Agent should NOT fire when there's nothing to report)
-
-## Views (Optional)
-
-If your agent has a workspace UI, add `views.json`. See [building-views.md](building-views.md) for details.
 
 ## Anti-Patterns
 

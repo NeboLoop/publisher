@@ -322,24 +322,6 @@ const me = await nebo.identity.get();
 nebo.identity.invalidate(); // Clear cache, re-fetch on next get()
 ```
 
-#### `nebo.a2ui`
-
-A2UI v0.9 message bridge for agent-driven UI components. Use with `@a2ui/web_core`:
-
-```typescript
-import { createMessageProcessor } from '@a2ui/web_core/v0_9';
-
-const processor = createMessageProcessor(container);
-nebo.a2ui.init(processor);
-nebo.surfaces.connect(); // A2UI messages flow through surfaces
-
-// Send UI action to agent
-nebo.a2ui.sendAction('surface-1', { type: 'click', target: 'approve-btn' });
-
-// Report error
-nebo.a2ui.sendError('surface-1', 'VALIDATION', 'Amount must be positive');
-```
-
 ### UI Principles
 
 1. **Dark theme default.** Nebo's shell is dark. Match it.
@@ -375,7 +357,7 @@ use tokio::net::UnixListener;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sock = std::env::var("NEBO_APP_SOCK")?;
-    let data_dir = std::env::var("NEBO_APP_DATA")?;
+    let data_dir = std::env::var("NEBO_DATA_DIR")?;
 
     let _ = std::fs::remove_file(&sock);
 
@@ -394,63 +376,83 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Request Routing
 
-```rust
-async fn handle_http(&self, method: &str, path: &str, body: &[u8]) -> HttpResponse {
-    let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+The sidecar implements the `UIService` gRPC service. The `HandleRequest` RPC receives HTTP-shaped requests (method, path, headers, body) from the Nebo proxy:
 
-    match (method, parts.as_slice()) {
-        ("GET", ["deals"]) => self.list_deals().await,
-        ("POST", ["deals"]) => self.create_deal(body).await,
-        ("GET", ["deals", id]) => self.get_deal(id).await,
-        ("PUT", ["deals", id]) => self.update_deal(id, body).await,
-        ("DELETE", ["deals", id]) => self.delete_deal(id).await,
-        ("GET", ["_tools"]) => self.get_tools(),
-        _ => json_response(404, &json!({"error": "not found"})),
+```rust
+use tonic::{Request, Response, Status};
+
+#[tonic::async_trait]
+impl UiService for MyAppService {
+    async fn handle_request(
+        &self,
+        request: Request<HttpRequest>,
+    ) -> Result<Response<HttpResponse>, Status> {
+        let req = request.into_inner();
+        let parts: Vec<&str> = req.path.trim_start_matches('/').split('/').collect();
+
+        match (req.method.as_str(), parts.as_slice()) {
+            ("GET", ["deals"]) => self.list_deals().await,
+            ("POST", ["deals"]) => self.create_deal(&req.body).await,
+            ("GET", ["deals", id]) => self.get_deal(id).await,
+            ("PUT", ["deals", id]) => self.update_deal(id, &req.body).await,
+            ("DELETE", ["deals", id]) => self.delete_deal(id).await,
+            _ => Ok(Response::new(HttpResponse {
+                status: 404,
+                body: serde_json::to_vec(&json!({"error": "not found"}))?,
+                ..Default::default()
+            })),
+        }
     }
 }
 ```
 
-### Tool Discovery
+### Tool Definitions
 
-Implement `GET /_tools` so the agent can call your sidecar directly:
+Tools are defined in the `tools` array in `agent.json`, not discovered at runtime. The agent reads tool definitions from the filesystem:
 
-```rust
-("GET", ["_tools"]) => {
-    json_response(200, &json!([
-        {
-            "name": "list_deals",
-            "description": "List all deals, optionally filtered by stage",
-            "method": "GET",
-            "path": "/deals",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "stage": { "type": "string", "enum": ["prospect", "analysis", "negotiation", "closed"] }
-                }
-            }
-        },
-        {
-            "name": "create_deal",
-            "description": "Create a new deal in the pipeline",
-            "method": "POST",
-            "path": "/deals",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "name": { "type": "string" },
-                    "amount": { "type": "number" },
-                    "stage": { "type": "string", "default": "prospect" }
-                },
-                "required": ["name", "amount"]
-            }
+```json
+// agent.json
+{
+  "tools": [
+    {
+      "name": "list_deals",
+      "description": "List all deals, optionally filtered by stage",
+      "method": "GET",
+      "path": "/deals",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "stage": { "type": "string", "enum": ["prospect", "analysis", "negotiation", "closed"] }
         }
-    ]))
+      }
+    },
+    {
+      "name": "create_deal",
+      "description": "Create a new deal in the pipeline",
+      "method": "POST",
+      "path": "/deals",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "amount": { "type": "number" },
+          "stage": { "type": "string", "default": "prospect" }
+        },
+        "required": ["name", "amount"]
+      }
+    }
+  ]
 }
 ```
 
 ### Data Persistence
 
-Use `$NEBO_APP_DATA` for all persistent storage:
+Use `$NEBO_DATA_DIR` for all persistent storage. It's the one data-dir variable
+for every artifact type (plugins, apps, skills) → `<NEBO_HOME>/appdata/<type>/<slug>/`,
+which Nebo **never** touches on update — you own your schema and migrate it across
+versions. Your process also *runs* in this directory, so a relative path
+(`./deals.db`) lands here too; never write into `$NEBO_APP_DIR` (your versioned
+code, wiped on update).
 
 ```rust
 let db_path = format!("{}/deals.db", data_dir);
@@ -468,16 +470,41 @@ conn.execute_batch("
 ```
 
 **Rules:**
-- All data goes in `$NEBO_APP_DATA` — nowhere else
+- All data goes in `$NEBO_DATA_DIR` — nowhere else
 - Data survives restarts, updates, and Nebo upgrades
 - Use SQLite for anything more complex than a single JSON file
 - Handle concurrent access (SQLite WAL mode)
 
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `NEBO_APP_SOCK` | Unix socket path — bind your gRPC server here |
+| `NEBO_DATA_DIR` | Writable data directory for persistent storage |
+| `NEBO_APP_TOKEN` | Per-launch auth token for callbacks to Nebo |
+| `NEBO_API_URL` | Callback URL to Nebo's HTTP API |
+| `NEBO_APP_ID` | App identifier |
+| `NEBO_APP_NAME` | App display name |
+| `NEBO_APP_VERSION` | App version string |
+| `NEBO_APP_DIR` | App root directory on disk |
+
+The environment is sanitized: only the vars above plus allowlisted system vars (`PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_ALL`, `TZ`) reach the sidecar. Secrets in the host environment are stripped.
+
+### Binary Discovery
+
+The runtime searches for the sidecar binary in these locations (first match wins):
+
+1. A file named `binary` at the app root
+2. A file named `app` at the app root
+3. First file in the `tmp/` directory
+4. First file in the `bin/` directory
+5. First extensionless executable in `sidecar/target/release/`
+
 ### Startup Requirements
 
 1. Read `$NEBO_APP_SOCK` — bind your Unix socket here
-2. Read `$NEBO_APP_DATA` — your writable data directory
-3. Create socket within 10 seconds (startup timeout)
+2. Read `$NEBO_DATA_DIR` — your writable data directory
+3. Create socket within 10 seconds (default startup timeout, configurable up to 120s via `manifest.startup_timeout`)
 4. Respond to `HealthCheck` RPC immediately
 5. Handle `SIGTERM` — flush data, close connections, exit cleanly
 
@@ -491,7 +518,7 @@ During development, Nebo watches your binary. When it changes:
 
 **Dev workflow:** Rebuild your binary → Nebo auto-restarts it. No manual intervention.
 
-Symlinks work: `bin/my-app → sidecar/target/release/my-app`
+The change watcher resolves through symlinks, so a dev layout like `bin/my-app → sidecar/target/release/my-app` is detected when the underlying target is rebuilt. Note that the binary that actually launches must resolve to a **regular file** — `validate_binary` rejects a symlinked binary at launch time.
 
 ## Skills for Apps
 
@@ -515,13 +542,12 @@ skills/
   "name": "@acme/agents/deal-tracker",
   "version": "1.0.0",
   "description": "Track real estate deals with AI-powered analysis.",
-  "artifact_type": "app",
+  "type": "app",
   "permissions": ["storage:readwrite", "subagent:invoke"],
   "window": {
     "title": "Deal Tracker",
     "width": 1024,
     "height": 768,
-    "min_width": 480,
     "resizable": true
   }
 }
@@ -537,7 +563,7 @@ skills/
 - [ ] Sidecar starts within 10 seconds
 - [ ] Sidecar handles SIGTERM gracefully
 - [ ] Data persists across sidecar restarts
-- [ ] `GET /_tools` returns valid tool definitions
+- [ ] `agent.json` contains valid tool definitions in `tools` array
 - [ ] Agent can call sidecar tools via LLM reasoning
 - [ ] Window resizes without layout breaks
 - [ ] Loading states shown during async operations
@@ -553,9 +579,9 @@ skills/
 | No loading states | Users think it's broken during async ops |
 | Ignoring `contextId` | All conversations mix together |
 | Giant monolithic sidecar | Split into route modules |
-| No tool discovery (`/_tools`) | Agent can't call your sidecar during reasoning |
+| No tool definitions in `agent.json` | Agent can't call your sidecar during reasoning |
 | No bundled skills | Agent doesn't know *when* to use tools |
-| Sidecar stores data outside `$NEBO_APP_DATA` | Data lost on reinstall |
-| Binary takes >10s to start | Startup timeout → launch failure |
+| Sidecar stores data outside `$NEBO_DATA_DIR` | Data lost on reinstall |
+| Binary takes >10s to start | Startup timeout → launch failure. Increase via `manifest.startup_timeout` (max 120s) |
 | Not using `nebo.surfaces` for state | UI and agent get out of sync |
 | Missing `nebo.WebSocket` for real-time | Polling instead of streaming |

@@ -9,8 +9,7 @@ my-agent/
   AGENT.md         # Persona, communication style, rules
   agent.json       # Inputs, workflows, activities, skills, pricing
   manifest.json    # NPM-style metadata (NOT uploaded as config)
-  views.json       # Optional — deterministic workspace UI
-  theme.css        # Optional — agent-specific styling
+  skills/          # Optional — bundled skills
 ```
 
 ## AGENT.md
@@ -19,21 +18,14 @@ my-agent/
 ---
 name: my-agent
 description: "What this agent does."
-triggers:
-  - keyword one
-  - keyword two
-metadata:
-  version: 1.0.0
-  category: "productivity"
-  requires:
-    plugins:
-      - gws
 ---
 
 # Agent Name
 
 Persona description, communication style, judgment rules, what it does and doesn't do.
 ```
+
+> **Note:** Triggers go in `agent.json` workflows, not in AGENT.md frontmatter. Version goes in `manifest.json`.
 
 ## agent.json
 
@@ -88,6 +80,32 @@ Persona description, communication style, judgment rules, what it does and doesn
 }
 ```
 
+### Top-Level agent.json Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `workflows` | object | Workflow bindings keyed by ID |
+| `requires` | object | Plugin dependencies (`plugins: ["PLUG-XXXX-XXXX"]`) |
+| `skills` | string[] | Skill qualified names |
+| `inputs` | array | User-configurable input fields |
+| `tools` | Vec\<AgentToolDef\> | HTTP endpoint tool definitions (see [Sidecar Tool Definitions](#sidecar-tool-definitions)) |
+| `scopes` | HashMap\<String, ToolScope\> | Per-context tool/skill/plugin restrictions (see [Tool Scoping](#tool-scoping)) |
+| `pricing` | object | Pricing model and cost |
+| `defaults` | object | Default values and configurable paths |
+| `memory` | object | Memory layer configuration |
+
+### WorkflowBinding Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `trigger` | object | Trigger configuration (type + type-specific fields) |
+| `description` | string | Human-readable workflow description |
+| `inputs` | object | Default inputs passed to the workflow on trigger |
+| `activities` | array | Ordered list of activities (empty = chat-only binding) |
+| `budget` | object | `{ "total_per_run": N }` |
+| `emit` | string (optional) | Event name emitted on workflow completion |
+| `connections` | Vec\<WorkflowConnection\> | Edges wiring activities together (`from`, `to`, optional `label`) |
+
 ## Trigger Types
 
 | Type | Fields | Description |
@@ -96,7 +114,27 @@ Persona description, communication style, judgment rules, what it does and doesn
 | `heartbeat` | `interval`, `window` | Recurring interval with optional time window |
 | `event` | `sources` | React to EventBus events |
 | `watch` | `plugin`, `event`, `command` | Long-running NDJSON process |
+| `folder` | `path`, `extensions`, `recursive`, `debounce_secs` | File system changes in a directory |
 | `manual` | — | Only via API or user request |
+
+### Folder Trigger
+
+```json
+{
+  "trigger": {
+    "type": "folder",
+    "path": "{{watch_directory}}",
+    "extensions": ["pdf", "docx"],
+    "recursive": true,
+    "debounce_secs": 2
+  }
+}
+```
+
+- `path` — directory to watch (supports `{{key}}` template variables)
+- `extensions` — file types to match, without leading dots (e.g., `["pdf", "docx"]`); empty = all files
+- `recursive` — watch subdirectories (default: `true`)
+- `debounce_secs` — wait before firing after last change (default: `2`)
 
 ## Activity Fields
 
@@ -104,11 +142,15 @@ Persona description, communication style, judgment rules, what it does and doesn
 |-------|------|----------|-------------|
 | `id` | string | yes | Unique within binding |
 | `intent` | string | yes | What the LLM should accomplish |
+| `type` | string | no | Activity type: `custom`, `research`, `email`, `notify`, `code`, `condition`, `loop`, `wait`, `agent`, `connector`, `http`, `transform` |
 | `steps` | string[] | no | Step-by-step hints |
 | `skills` | string[] | no | Skill qualified names |
-| `model` | string | no | `"sonnet"`, `"haiku"`, `"opus"` |
+| `model` | string | no | Per-activity model override — `"sonnet"`, `"haiku"`, `"opus"` (fuzzy names resolved by selector) |
+| `mcps` | string[] | no | MCP server references |
+| `cmds` | string[] | no | Workflow commands |
+| `params` | object | no | Arbitrary JSON parameters |
 | `token_budget` | object | no | `{ "max": 4096 }` |
-| `on_error` | object | no | `{ "retry": 1, "fallback": "skip" }` |
+| `on_error` | object | no | `{ "retry": 1, "fallback": "notify_owner" }` — fallback values: `notify_owner` (default), `skip`, `abort` |
 
 ## Input Fields
 
@@ -125,10 +167,10 @@ Persona description, communication style, judgment rules, what it does and doesn
 
 - All inputs should be optional for zero-config install
 - Plugins in `requires.plugins` are auto-installed (use install codes like `PLUG-XXXX-XXXX`)
-- `{{key}}` placeholders in trigger commands must exactly match an input `key`
-- Template substitution works in ALL trigger configs (not just watch) — cron, intervals, etc.
+- `{{key}}` placeholders must exactly match an input `key`
+- Template substitution applies ONLY to the watch trigger `command` and the folder trigger `path` — schedule/cron, interval, and other trigger configs receive the raw value with no substitution
 - Activity IDs must be unique within each binding
-- Budget math: sum of activity `token_budget.max` must not exceed `budget.total_per_run`
+- Budget math: keep the sum of activity `token_budget.max` at or below `budget.total_per_run` (this sum-vs-total check is enforced at parse time only for standalone `workflow.json`; inline agent.json bindings are NOT validated at load time, but per-activity and global budgets are still enforced at runtime)
 - Activities execute sequentially — each output becomes context for the next
 - Empty activity output = branch termination (downstream activities skip)
 
@@ -179,7 +221,7 @@ Declare HTTP endpoints as native LLM tools directly in agent.json:
 
 - Path parameters resolved from input: `/items/{id}` + `{"id": "abc"}` → `/items/abc`
 - GET → query params, POST/PUT/PATCH → JSON body
-- Also discoverable via `GET /_tools` on the sidecar
+- Tool definitions are read from `agent.json` at load time (sidecars do NOT serve a discovery endpoint)
 
 ## Tool Scoping
 
@@ -206,7 +248,7 @@ Separate from AGENT.md. Where AGENT.md = job description, soul = personality/voi
 | Contains | Capabilities, priorities, judgment | Voice, tone, quirks, values, boundaries |
 | Analogy | What the agent *does* | Who the agent *is* |
 
-Set via Settings UI, API, or `soul` field in agent.json. Injected as `agent_soul` context.
+Set via the Settings UI or API — stored in the `agents.soul` DB column, NOT parsed from agent.json. Injected as `agent_soul` context.
 
 ## Followup Suggestions
 

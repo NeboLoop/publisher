@@ -32,7 +32,7 @@ my-app/
   "name": "@acme/agents/deal-tracker",
   "version": "1.0.0",
   "description": "Track real estate deals with AI-powered analysis.",
-  "artifact_type": "app",
+  "type": "app",
   "permissions": [
     "storage:readwrite",
     "subagent:invoke",
@@ -42,8 +42,6 @@ my-app/
     "title": "Deal Tracker",
     "width": 1024,
     "height": 768,
-    "min_width": 480,
-    "min_height": 400,
     "resizable": true
   }
 }
@@ -56,7 +54,7 @@ my-app/
 | `id` | Unique identifier. Must match directory name. |
 | `name` | Qualified name (`@org/agents/name`). |
 | `version` | Semantic version. |
-| `artifact_type` | Must be `"app"`. |
+| `type` | Must be `"app"`. |
 
 ## Permissions
 
@@ -72,7 +70,7 @@ my-app/
 
 ## Frontend SDK
 
-Install: `npm install @neboai/app-sdk`
+Install: `pnpm add @neboai/app-sdk`
 
 ```typescript
 import { nebo } from '@neboai/app-sdk';
@@ -127,24 +125,32 @@ service UIService {
 
 | Variable | Description |
 |----------|-------------|
-| `NEBO_APP_ID` | Agent identifier |
+| `NEBO_APP_ID` | App identifier |
 | `NEBO_APP_SOCK` | Unix socket path |
-| `NEBO_APP_DATA` | Writable data directory |
+| `NEBO_DATA_DIR` | Writable data directory |
 | `NEBO_APP_DIR` | App root directory |
+| `NEBO_APP_TOKEN` | Per-launch auth token for callbacks to Nebo |
+| `NEBO_API_URL` | Callback URL to Nebo's HTTP API |
+| `NEBO_APP_NAME` | App display name |
+| `NEBO_APP_VERSION` | App version string |
 
-### Tool Discovery
+The sidecar's environment is sanitized: only the `NEBO_APP_*` / `NEBO_API_URL` vars above plus the allowlisted system vars `PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_ALL`, and `TZ` are passed through. Everything else (API keys, secrets) is stripped.
 
-Implement `GET /_tools` to expose endpoints as LLM tools:
+### Tool Definitions
+
+Tools are defined in the `tools` array in `agent.json` (not discovered at runtime):
 
 ```json
-[
-  {
-    "name": "list_projects",
-    "description": "List all projects",
-    "method": "GET",
-    "path": "/projects"
-  }
-]
+{
+  "tools": [
+    {
+      "name": "list_projects",
+      "description": "List all projects",
+      "method": "GET",
+      "path": "/projects"
+    }
+  ]
+}
 ```
 
 ## Publishing
@@ -154,19 +160,21 @@ neboai publish ./my-app
 ```
 
 The CLI will:
-1. Validate manifest.json (`artifact_type: "app"` present)
+1. Validate manifest.json (`type: "app"` present)
 2. Validate AGENT.md and agent.json (if present)
 3. Verify `ui/index.html` exists
-4. Upload AGENT.md as manifest
-5. Upload agent.json as config (if present)
-6. Upload sidecar binary per platform (if present)
-7. Submit for review
+4. Upload AGENT.md as the agent payload
+5. Upload agent.json as config (apps are agent-type artifacts, so the publish path stores `agent.json` as config only — it does not upload a binary)
+6. Submit for review
+
+> The marketplace `.napp` for an app carries the agent payload (`manifest.json`, `agent.json`, `AGENT.md`, `signatures.json`). The `ui/` directory is **not** bundled into the `.napp`, and there is **no** per-file size limit on `ui/`. Sidecar binaries are delivered through the separate per-platform binary upload path, not the agent config upload.
 
 ## Key Rules
 
-- `artifact_type` MUST be `"app"` in manifest.json
+- `type` MUST be `"app"` in manifest.json
 - `ui/index.html` MUST exist
 - Sidecar must read `$NEBO_APP_SOCK` and bind a Unix socket there
-- Sidecar startup timeout: 10 seconds (max 120)
+- The launched sidecar binary must be a regular file — symlinks are rejected at launch (a symlinked dev binary like `bin/my-app → target/release/my-app` is fine for hot-reload detection, but the file that actually runs must resolve to a regular executable)
+- Sidecar startup timeout: 10 seconds default, max 120s (set via `startup_timeout`)
+- Window config accepts `title`, `width`, `height`, `resizable` (defaults: width 1024, height 768, resizable true). There are no `min_width`/`min_height` fields.
 - Apps without a sidecar (pure frontend) don't need binary uploads
-- Max 5MB per file in `ui/` directory for marketplace distribution
