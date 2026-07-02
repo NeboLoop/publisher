@@ -1,0 +1,11 @@
+{
+  "name": "filesystem",
+  "title": "Local Filesystem",
+  "description": "Browse and edit local files from chat.",
+  "category": "Build & connect",
+  "version": "1.0.0",
+  "mcpServers": {
+    "fs": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] },
+    "acme": { "url": "https://mcp.acme.com/sse" }
+  }
+}

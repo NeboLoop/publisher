@@ -139,7 +139,7 @@ Checks structure, YAML/JSON validity, required fields, naming conventions, budge
 neboai list                    # List your published artifacts
 neboai status <id>             # Check submission/review status
 neboai binaries list <id>      # List uploaded binaries for an artifact
-neboai binaries delete <id>    # Delete a binary (fix duplicates)
+neboai binaries delete <artifact-id> <binary-id>  # Delete a binary (fix duplicates)
 ```
 
 ---

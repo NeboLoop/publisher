@@ -1,0 +1,11 @@
+{
+  "name": "Sales Stack",
+  "title": "Sales Stack",
+  "description": "Everything for outbound sales, installed in one paste.",
+  "category": "Find customers",
+  "version": "1.0.0",
+  "items": [
+    { "targetId": "0e1f2a3b-4c5d-6e7f-8a9b-0c1d2e3f4a5b", "targetType": "skill", "position": 0 },
+    { "targetId": "7a2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e", "targetType": "agent", "position": 1 }
+  ]
+}

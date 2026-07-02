@@ -1,6 +1,7 @@
 ---
 name: meeting-prep
 description: Prepare a briefing document before calendar meetings. Use when the user asks to prepare for a meeting, review upcoming meetings, or create pre-meeting summaries.
+version: "1.0.0"
 capabilities: [calendar, storage]
 triggers:
   - prepare for meeting
@@ -8,7 +9,6 @@ triggers:
   - briefing
   - what's my next meeting
 metadata:
-  version: "1.0.0"
   category: productivity
 ---
 # Meeting Prep

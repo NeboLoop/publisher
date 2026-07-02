@@ -1,4 +1,5 @@
 {
+  "_comment": "The sha256, size, signature, and downloadUrl fields are filled in automatically at publish time. Leave the placeholders here as-is.",
   "id": "weather-api",
   "slug": "weather-api",
   "name": "Weather API",
@@ -9,12 +10,16 @@
     "darwin-arm64": {
       "binaryName": "weather-api",
       "sha256": "",
-      "size": 0
+      "size": 0,
+      "signature": "<ed25519-signature>",
+      "downloadUrl": "https://cdn.neboai.com/plugins/weather-api/1.0.0/darwin-arm64/weather-api"
     },
     "linux-amd64": {
       "binaryName": "weather-api",
       "sha256": "",
-      "size": 0
+      "size": 0,
+      "signature": "<ed25519-signature>",
+      "downloadUrl": "https://cdn.neboai.com/plugins/weather-api/1.0.0/linux-amd64/weather-api"
     }
   },
   "envVar": "WEATHER_API_BIN",

@@ -318,7 +318,7 @@ async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<(
     );
 
     println!("Creating app: {name}");
-    let id = api::create_artifact(account_id, &name, "agent", category, &description, &version, visibility, &agent_md).await?;
+    let id = api::create_artifact(account_id, &name, "app", category, &description, &version, visibility, &agent_md).await?;
     println!("  Artifact ID: {id}");
 
     let config_path = if dir.join("agent.json").exists() {

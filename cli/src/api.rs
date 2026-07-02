@@ -104,12 +104,12 @@ pub async fn list_binaries(id: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn delete_binary(id: &str) -> Result<()> {
+pub async fn delete_binary(artifact_id: &str, binary_id: &str) -> Result<()> {
     let (client, token) = authenticated_client().await?;
     let base = base_url();
 
     let resp = client
-        .delete(format!("{base}/developer/binaries/{id}"))
+        .delete(format!("{base}/developer/apps/{artifact_id}/binaries/{binary_id}"))
         .bearer_auth(&token)
         .send()
         .await?;

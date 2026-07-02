@@ -545,6 +545,8 @@ Channel plugins bridge Nebo to external messaging platforms (Slack, Discord, etc
 
 By default Nebo spawns one bridge per `(agent_id, plugin_slug)` — each agent gets its own process and credentials. Set `channel.shared: true` in `plugin.json` to run a single bridge shared across all agents; inbound platform events carry the target agent's name and Nebo routes each message to the matching agent. Use the per-agent default unless your platform genuinely has one connection for all agents.
 
+Channel-triggered agent runs receive Nebo's global Full Access setting. If Full Access is off and the agent asks for a gated action, Nebo cancels the channel run and returns a text fallback; channel bridges do not show approval modals and should not implement their own approve/deny CLI path.
+
 ### NDJSON Protocol
 
 The bridge communicates with Nebo via newline-delimited JSON on stdin (commands from Nebo) and stdout (events to Nebo):

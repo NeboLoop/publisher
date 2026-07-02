@@ -1,7 +1,7 @@
 ---
 name: neboai
 description: Build, validate, and publish skills, plugins, agents, and apps to the NeboLoop marketplace. Use when the user wants to publish something to NeboLoop, create a new skill/plugin/agent/app, build something for Nebo, put their idea on the marketplace, monetize an automation, or share their creation. Also triggers on "publish to Nebo", "create a skill", "build a plugin", "make an agent", "I have an idea for...", "can I sell this on Nebo?".
-compatibility: Works with NeboLoop MCP tools (Claude Desktop) or neboai CLI (Claude Code)
+compatibility: Works with NeboLoop MCP tools (Claude Desktop) or neboai CLI (Claude Code). Nebo is a Personal Desktop AI Companion for macOS, Windows, and Linux.
 allowed-tools: Bash(neboai *) Bash(cargo *) Bash(rustc *) Read Write Edit Glob Grep
 triggers:
   - publish to nebo
@@ -15,7 +15,7 @@ triggers:
   - nebo marketplace
 metadata:
   author: neboloop
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 # NeboLoop — From Idea to Marketplace
 
@@ -399,6 +399,8 @@ For messaging integrations (Slack, Discord, Teams), use the `channel` field:
 
 The bridge process is long-running. It receives outbound operations (reply, post, upload, dm) as NDJSON on **stdin** and emits inbound messages as NDJSON on **stdout**. The bridge MUST exit when stdin reaches EOF (orphan prevention). See [references/building-plugins.md](references/building-plugins.md) for the full NDJSON protocol.
 
+Channel-triggered agent runs inherit Nebo's global Full Access setting. If Full Access is off and the run requests a gated action, Nebo returns a text fallback instead of showing an approval modal through the channel bridge.
+
 ### Rust Plugin Binary Pattern
 
 ```rust
@@ -476,7 +478,7 @@ Minimum recommended: `darwin-arm64` + `linux-amd64` (a warning is logged if thes
 
 ## Building Agents
 
-An agent is a job description with workflows. Three files: `AGENT.md` (persona), `agent.json` (wiring), `manifest.json` (identity).
+An agent is a job description with workflows: `AGENT.md` (persona) plus `agent.json` (wiring). `manifest.json` is optional marketplace metadata (required only for apps).
 
 ### Directory Structure
 
@@ -629,6 +631,10 @@ All inputs should have defaults (zero-config install). Template substitution: `{
 | `radio` | Pick one with all visible |
 
 Input options accept both object form `{"value": "x", "label": "X"}` and plain strings (auto-generates label from value).
+
+### What happens when your agent is installed
+
+Installing an agent runs its **dependency cascade** first: any `requires.plugins` install before its skills. Nebo then wires everything through one canonical install routine — it reloads the agent, materializes its workflows into the Workflows panel, seeds update-tracking, and refreshes the sidebar roster live. A **single-agent install** (an `AGNT-` code) **auto-activates**: the worker starts and every trigger registers. An agent installed as part of a **collection arrives Paused** — the user activates it. **Deleting** an agent stops its worker, unregisters its triggers, and cleans up its chats, sessions, memories, and workflow runs.
 
 ---
 
@@ -1039,7 +1045,7 @@ Set the human listing on any of them: `<type>(action: update, id, name: "Title C
 neboai list                    # List published artifacts
 neboai status <id>             # Check review status
 neboai binaries list <id>      # List uploaded binaries
-neboai binaries delete <id>    # Delete a binary (fix duplicates)
+neboai binaries delete <artifact-id> <binary-id>  # Delete a binary (fix duplicates)
 ```
 
 **Updating an artifact:** Use `action: update` with the same ID and new `manifestContent`. Then re-submit with bumped version.
@@ -1081,7 +1087,7 @@ Handle these yourself — never dump errors on the user.
 **CLI tools:**
 ```bash
 neboai binaries list <id>      # See what was uploaded
-neboai binaries delete <id>    # Clean up partial uploads
+neboai binaries delete <artifact-id> <binary-id>  # Clean up partial uploads
 ```
 
 **MCP:** Use `skill/agent/plugin(action: get, id: "<ID>")` to check state, then delete/recreate as needed.

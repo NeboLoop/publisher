@@ -80,8 +80,10 @@ enum BinariesAction {
     },
     /// Delete a binary
     Delete {
+        /// Artifact ID
+        artifact_id: String,
         /// Binary ID
-        id: String,
+        binary_id: String,
     },
 }
 
@@ -116,8 +118,8 @@ async fn main() -> anyhow::Result<()> {
             BinariesAction::List { id } => {
                 api::list_binaries(&id).await?;
             }
-            BinariesAction::Delete { id } => {
-                api::delete_binary(&id).await?;
+            BinariesAction::Delete { artifact_id, binary_id } => {
+                api::delete_binary(&artifact_id, &binary_id).await?;
             }
         },
     }

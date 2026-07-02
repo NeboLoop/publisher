@@ -104,7 +104,7 @@ my-plugin/
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `channel` | PluginChannel | Channel bridge configuration (for messaging platform plugins). Set `channel.shared: true` to run one bridge process shared across all agents (incoming messages routed to agents by name); otherwise each agent gets its own bridge. |
+| `channel` | PluginChannel | Channel bridge configuration (for messaging platform plugins). Set `channel.shared: true` to run one bridge process shared across all agents (incoming messages routed to agents by name); otherwise each agent gets its own bridge. Channel-triggered runs inherit Nebo's global Full Access setting; bridges do not show approval modals. |
 | `events` | Vec\<PluginEventDef\> | Event definitions the plugin can emit. |
 | `dependencies` | Vec\<PluginDependency\> | Other plugins this plugin depends on. |
 | `triggers` | Vec\<String\> | Trigger phrases that activate the plugin. |
