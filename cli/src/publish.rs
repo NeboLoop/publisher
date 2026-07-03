@@ -130,8 +130,29 @@ async fn publish_connector(dir: &Path, account_id: &str, visibility: &str) -> Re
     let raw = read_file(dir, "connector.json")?;
     let json: serde_json::Value =
         serde_json::from_str(&raw).context("connector.json is not valid JSON")?;
-    if json.get("mcpServers").is_none() && json.get("servers").is_none() {
+    let servers = json
+        .get("mcpServers")
+        .or_else(|| json.get("servers"))
+        .and_then(|s| s.as_object());
+    let Some(servers) = servers.filter(|s| !s.is_empty()) else {
         bail!("connector.json must contain an 'mcpServers' (or 'servers') object with at least one server");
+    };
+    // Mirror the server-side validation so authors fail fast: each server is
+    // stdio (`command`) or remote (`url`), and remote auth is declared via
+    // `authType` — without it the desktop registers the server as
+    // unauthenticated and it will fail against protected APIs.
+    for (name, entry) in servers {
+        let command = entry.get("command").and_then(|v| v.as_str()).unwrap_or("");
+        let url = entry.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        if command.is_empty() && url.is_empty() {
+            bail!("connector server '{name}' must have a 'command' (stdio) or 'url' (remote)");
+        }
+        match entry.get("authType").and_then(|v| v.as_str()).unwrap_or("") {
+            "" | "none" | "oauth" | "api_key" => {}
+            other => bail!(
+                "connector server '{name}' has invalid authType '{other}' (must be 'none', 'oauth', or 'api_key')"
+            ),
+        }
     }
 
     let name = json
