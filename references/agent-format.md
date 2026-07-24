@@ -280,6 +280,34 @@ The CLI will:
 3. Upload agent.json as the config (with `platform=linux-amd64`)
 4. Submit for review
 
+## manifest.json
+
+Marketplace identity — never uploaded as config.
+
+```json
+{
+  "id": "sdr",
+  "name": "@neboloop/agents/sdr",
+  "title": "Sales Development Rep",
+  "version": "1.0.0",
+  "type": "agent",
+  "description": "One-sentence value proposition.",
+  "author": "Nebo Sales",
+  "departments": ["sales"],
+  "tags": ["sales", "outbound", "prospecting"]
+}
+```
+
+| Field | Notes |
+|---|---|
+| `id` | Agent slug (folder name) |
+| `name` | Qualified name `@publisher/agents/<slug>` |
+| `title` | Display name shown in the marketplace |
+| `version` | Semver — the ONE place version lives |
+| `type` | Always `"agent"` |
+| `departments` | Department slugs this seat belongs to. Canonical slugs: `accounting`, `sales`, `marketing`, `customer-support`, `people-hr`, `operations`, `executive`, `it`, `legal`. Cross-cutting providers may list several; `["*"]` means universal. Drives marketplace department browsing AND the desktop Inbox's department filter — the installer records the first slug on the hired agent. |
+| `tags` | Free-form search keywords |
+
 ## CRITICAL
 
 - The `config` upload field = `agent.json`. NEVER `manifest.json`.
