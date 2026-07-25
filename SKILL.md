@@ -1,7 +1,7 @@
 ---
 name: neboai
 description: Build, validate, and publish skills, plugins, agents, and apps to the NeboLoop marketplace. Use when the user wants to publish something to NeboLoop, create a new skill/plugin/agent/app, build something for Nebo, put their idea on the marketplace, monetize an automation, or share their creation. Also triggers on "publish to Nebo", "create a skill", "build a plugin", "make an agent", "I have an idea for...", "can I sell this on Nebo?".
-compatibility: Works with NeboLoop MCP tools (Claude Desktop) or neboai CLI (Claude Code). Nebo is a Personal Desktop AI Companion for macOS, Windows, and Linux.
+compatibility: Works with NeboLoop MCP tools (Claude Desktop) or neboai CLI (Claude Code). Nebo is the operating system for AI employees, for macOS, Windows, and Linux.
 allowed-tools: Bash(neboai *) Bash(cargo *) Bash(rustc *) Read Write Edit Glob Grep
 triggers:
   - publish to nebo
@@ -15,7 +15,7 @@ triggers:
   - nebo marketplace
 metadata:
   author: neboloop
-  version: "0.2.1"
+  version: "0.2.2"
 ---
 # NeboLoop — From Idea to Marketplace
 
@@ -1048,7 +1048,7 @@ neboai binaries list <id>      # List uploaded binaries
 neboai binaries delete <artifact-id> <binary-id>  # Delete a binary (fix duplicates)
 ```
 
-**Updating an artifact:** Use `action: update` with the same ID and new `manifestContent`. Then re-submit with bumped version.
+**Updating an artifact (new version):** `neboai publish <dir>` handles it — it resolves an existing slug+type and updates in place (manifest + version first, then binaries) instead of failing on the create endpoint's unique constraint. Ordering matters and the CLI enforces it: the artifact's `version` field MUST be updated before uploading binaries, because the binaries endpoint records every upload under the artifact row's CURRENT version — upload first and the new bytes get filed under the old version label (and the upsert silently replaces that version's bytes). Update publishes do NOT call submit (the server rejects it on an active artifact); each binary upload auto-queues the scan → sign → napp build for the new version. Via MCP: `<type>(action: update, id, manifestContent, version)` — same rule, set the version in the same call or before any binary upload.
 
 ---
 
@@ -1056,13 +1056,13 @@ neboai binaries delete <artifact-id> <binary-id>  # Delete a binary (fix duplica
 
 1. **Config = agent.json.** NEVER upload manifest.json as the config field.
 2. **Agent/app uploads read only `config`.** No `file`, no `platform` — the server's agent branch ignores both. (The CLI still sends `platform=linux-amd64`, but it's unused.)
-3. **Plugin.json must be hardcoded.** No `{{template_vars}}` in plugin.json values.
+3. **Plugin.json metadata must be hardcoded.** No `{{template_vars}}` in top-level scalar fields (id, slug, name, version, description, …) or platform entries — that's unfilled scaffolding and the validator rejects it. Nested structures MAY contain `{{...}}`: the `setup`/`auth` wizard flows and `events[].command` use Nebo's runtime `{{key}}` substitution, and third-party tool descriptions often mention `{{...}}` as prose.
 4. **JSON must be valid.** No trailing commas. Validate: `python3 -c "import json; json.load(open('file.json'))"`
 5. **Upload tokens expire in 5 minutes.** The CLI handles this automatically.
 6. **HTTP/1.1 for uploads.** HTTP/2 causes stream errors on large files. CLI handles this.
 7. **Skills tarball + config only on first platform upload** (plugins). Subsequent platforms are binary-only.
 8. **Plugin binaries: recommend darwin-arm64 + linux-amd64.** Missing platforms log a warning.
-9. **Duplicate version+platform = 500 error.** Delete existing binary first.
+9. **Re-uploading the same version+platform REPLACES the binary** (upsert: new bytes, new sha256, signature reset for re-sign). Good for fixing a corrupt upload; dangerous if the artifact version wasn't bumped first — you'll silently overwrite the old version's bytes (see "Updating an artifact").
 10. **Budget math must balance.** Sum of activity token_budget.max ≤ budget.total_per_run.
 11. **manifest.json uses `"type"`, not `"artifact_type"`.** The serde rename makes the JSON key `"type"`.
 12. **Sidecar = gRPC over Unix socket.** Not HTTP. Implement `UIService.HandleRequest`.

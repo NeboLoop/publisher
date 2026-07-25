@@ -169,6 +169,45 @@ pub async fn resolve_account(slug: Option<&str>) -> Result<String> {
 
 // --- Create / Update / Submit ---
 
+/// Resolve an existing artifact's ID by slug/name + type. Publishing an
+/// artifact that already exists is a version update, not a create — the
+/// create endpoint rejects the slug+type unique constraint with a 400.
+pub async fn find_artifact(name: &str, artifact_type: &str) -> Result<Option<String>> {
+    let (client, token) = authenticated_client().await?;
+    let base = base_url();
+
+    let resp = client
+        .get(format!("{base}/developer/apps"))
+        .bearer_auth(&token)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await?;
+        anyhow::bail!("Failed to list artifacts ({status}): {body}");
+    }
+
+    let body: serde_json::Value = resp.json().await?;
+    let empty = vec![];
+    let products = body
+        .get("products")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
+    for p in products {
+        let app = p.get("app").unwrap_or(p);
+        let slug = app.get("slug").and_then(|v| v.as_str());
+        let app_name = app.get("name").and_then(|v| v.as_str());
+        let ty = app.get("type").and_then(|v| v.as_str());
+        if ty == Some(artifact_type) && (slug == Some(name) || app_name == Some(name)) {
+            if let Some(id) = app.get("id").and_then(|v| v.as_str()) {
+                return Ok(Some(id.to_string()));
+            }
+        }
+    }
+    Ok(None)
+}
+
 pub async fn create_artifact(
     account_id: &str,
     name: &str,
@@ -216,13 +255,20 @@ pub async fn create_artifact(
 }
 
 #[allow(dead_code)]
-pub async fn update_manifest(id: &str, manifest_content: &str) -> Result<()> {
+/// Update an existing artifact's manifest and (when provided) its version.
+/// The version MUST be updated before uploading a new version's binaries:
+/// the binaries endpoint records uploads under the artifact row's CURRENT
+/// version, so uploading first mislabels the new bytes as the old version.
+pub async fn update_manifest(id: &str, manifest_content: &str, version: Option<&str>) -> Result<()> {
     let (client, token) = authenticated_client().await?;
     let base = base_url();
 
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "manifestContent": manifest_content,
     });
+    if let Some(v) = version {
+        body["version"] = serde_json::json!(v);
+    }
 
     let resp = client
         .put(format!("{base}/developer/apps/{id}"))
@@ -505,14 +551,18 @@ fn zip_dir(dir: &std::path::Path) -> Result<(Vec<u8>, usize)> {
             .with_context(|| format!("path escapes skill dir: {}", path.display()))?;
         // Normalize to forward slashes; the server matches path components.
         let rel_str = rel.to_string_lossy().replace('\\', "/");
-        // Skip VCS metadata, OS noise, and LISTING.md (uploaded separately as
-        // the marketplace long description, not a runtime skill file).
+        // The runtime bundle is exactly the documented skill format: SKILL.md
+        // plus the references/, scripts/, and assets/ trees. Everything else
+        // in the directory is dev scaffolding (a cli/ crate with target/, CI
+        // files, Formula, …) that must never ship — an unfiltered walk blows
+        // the upload size cap and leaks non-runtime files.
+        let top = rel_str.split('/').next().unwrap_or("");
+        let allowed = rel_str == "SKILL.md"
+            || top == "references"
+            || top == "scripts"
+            || top == "assets";
         let base = rel.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        if rel_str.split('/').any(|c| c == ".git")
-            || base == ".DS_Store"
-            || base == "LISTING.md"
-            || base == "listing.md"
-        {
+        if !allowed || rel_str.split('/').any(|c| c == ".git") || base == ".DS_Store" {
             continue;
         }
         let bytes = std::fs::read(path)

@@ -89,10 +89,36 @@ fn validate_plugin(dir: &Path) -> Result<()> {
         }
     }
 
-    // Check for template variables
-    let raw = std::fs::read_to_string(&plugin_json_path)?;
-    if raw.contains("{{") {
-        bail!("plugin.json: contains template variables ({{{{...}}}}). Hardcode all values.");
+    // Check for unresolved template variables — but only where they mean
+    // unfilled scaffolding: top-level metadata scalars (id, name, version,
+    // description, …) and platform entries. Nested structures legitimately
+    // contain `{{`: setup/auth wizard flows and events[].command use Nebo's
+    // runtime `{{key}}` substitution, and capabilities tool descriptions are
+    // third-party API prose that merely mentions `{{...}}` (Asana, Lob,
+    // WorkOS all do). A blanket scan false-rejects real published plugins.
+    if let Some(obj) = plugin_json.as_object() {
+        for (key, value) in obj {
+            let scaffolded = match value {
+                serde_json::Value::String(s) => s.contains("{{"),
+                _ if key == "platforms" => value
+                    .as_object()
+                    .map(|p| {
+                        p.values().any(|pv| {
+                            pv.as_object().is_some_and(|o| {
+                                o.values()
+                                    .any(|s| s.as_str().is_some_and(|s| s.contains("{{")))
+                            })
+                        })
+                    })
+                    .unwrap_or(false),
+                _ => false,
+            };
+            if scaffolded {
+                bail!(
+                    "plugin.json: field '{key}' contains template variables ({{{{...}}}}). Hardcode metadata values."
+                );
+            }
+        }
     }
 
     println!("  plugin.json: valid");

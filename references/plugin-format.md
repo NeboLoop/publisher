@@ -227,7 +227,7 @@ At minimum, target `darwin-arm64` and `linux-amd64`.
 
 ## Critical Rules
 
-- **Hardcode all static config values in plugin.json.** No template variables like `{{gcp_project}}` in static fields. However, `events[].command` fields DO support `{{key}}` substitution from agent inputs at runtime.
+- **Hardcode all top-level metadata in plugin.json.** No template variables like `{{gcp_project}}` in top-level scalar fields or platform entries — the publish validator rejects those as unfilled scaffolding. Nested values are exempt: `{{key}}` substitution IS supported at runtime in `events[].command` (from agent inputs) and in the `setup`/`auth` wizard flows (collected field values into later Generate-step args), and tool descriptions may legitimately mention `{{...}}` as third-party API prose.
 - **Binary must be a single executable file** — no runtime dependencies.
 - **`id` field is required** — without it, the plugin cannot be resolved.
 - **`auth.commands.login` must be non-empty** if `auth` is present (unless `auth.type` is `"env"`, which uses env vars and needs no login command). `auth.commands.status` and `auth.commands.logout` are optional.

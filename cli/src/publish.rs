@@ -190,8 +190,21 @@ async fn publish_skill(dir: &Path, account_id: &str, visibility: &str) -> Result
     let category = category_display_name(fm.category.as_deref().unwrap_or(""));
     let description = cap_description(&fm.description);
 
-    println!("Creating skill: {name}");
-    let id = api::create_artifact(account_id, &name, "skill", category, &description, &version, visibility, &skill_md).await?;
+    // Existing skill → version update: refresh manifest + version, re-upload
+    // the bundle. Same rule as plugins — version updates before content.
+    let mut updating = false;
+    let id = match api::find_artifact(&name, "skill").await? {
+        Some(existing) => {
+            updating = true;
+            println!("Updating skill: {name} -> {version}");
+            api::update_manifest(&existing, &skill_md, Some(&version)).await?;
+            existing
+        }
+        None => {
+            println!("Creating skill: {name}");
+            api::create_artifact(account_id, &name, "skill", category, &description, &version, visibility, &skill_md).await?
+        }
+    };
     println!("  Artifact ID: {id}");
 
     // Upload the whole directory as a bundle so references/, scripts/, and
@@ -205,7 +218,13 @@ async fn publish_skill(dir: &Path, account_id: &str, visibility: &str) -> Result
     // description from LISTING.md, if present.
     apply_listing(dir, &id, &name, fm.title.as_deref()).await?;
 
-    finalize(&id, &name, "Skill", &version, visibility).await?;
+    if updating {
+        // Same as plugins: submit 400s on an active artifact; the bundle
+        // upload already refreshed the served content for the new version.
+        println!("\nDone! Skill '{name}' updated to v{version}.");
+    } else {
+        finalize(&id, &name, "Skill", &version, visibility).await?;
+    }
     Ok(())
 }
 
@@ -239,8 +258,23 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
         .unwrap_or_else(|| format!("{name} — NeboAI plugin"));
     let description = cap_description(&description);
 
-    println!("Creating plugin: {name}");
-    let id = api::create_artifact(account_id, &name, "plugin", category, &description, &version, visibility, &plugin_md).await?;
+    // Existing artifact → this is a version update: refresh the manifest and
+    // upload the new version's binaries (binary storage is version-scoped
+    // server-side, so prior versions are untouched). Only a brand-new slug
+    // goes through create.
+    let mut updating = false;
+    let id = match api::find_artifact(&name, "plugin").await? {
+        Some(existing) => {
+            updating = true;
+            println!("Updating plugin: {name} -> {version}");
+            api::update_manifest(&existing, &plugin_md, Some(&version)).await?;
+            existing
+        }
+        None => {
+            println!("Creating plugin: {name}");
+            api::create_artifact(account_id, &name, "plugin", category, &description, &version, visibility, &plugin_md).await?
+        }
+    };
     println!("  Artifact ID: {id}");
 
     // Build skills tarball if skills/ exists
@@ -279,7 +313,14 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
     }
 
     apply_listing(dir, &id, &name, None).await?;
-    finalize(&id, &name, "Plugin", &version, visibility).await?;
+    if updating {
+        // Version updates on an active artifact don't go through submit —
+        // the server rejects it ("already active or in review"). Each binary
+        // upload already queued a scan→sign→napp submission for this version.
+        println!("\nDone! Plugin '{name}' v{version} uploaded; scan/sign pipeline queued per binary.");
+    } else {
+        finalize(&id, &name, "Plugin", &version, visibility).await?;
+    }
     Ok(())
 }
 

@@ -51,9 +51,24 @@ elif [ -f "$DIR/plugin.json" ]; then
   echo "Type: plugin"
   check_json "$DIR/plugin.json"
   check_yaml_frontmatter "$DIR/PLUGIN.md"
-  # Check for template vars
-  if grep -q '{{' "$DIR/plugin.json" 2>/dev/null; then
-    echo "FAIL: plugin.json contains template variables ({{ }})"
+  # Check for template vars — only in top-level metadata scalars + platforms,
+  # where {{ }} means unfilled scaffolding. Nested structures legitimately
+  # contain it (setup/auth wizard {{key}} substitution, events[].command,
+  # third-party tool-description prose). Mirrors cli/src/validate.rs.
+  if python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+bad = []
+for k, v in d.items():
+    if isinstance(v, str) and "{{" in v:
+        bad.append(k)
+    elif k == "platforms" and isinstance(v, dict):
+        for pv in v.values():
+            if isinstance(pv, dict) and any(isinstance(s, str) and "{{" in s for s in pv.values()):
+                bad.append(k)
+sys.exit(1 if bad else 0)
+' "$DIR/plugin.json" 2>/dev/null; then :; else
+    echo "FAIL: plugin.json top-level metadata contains template variables ({{ }})"
     ERRORS=$((ERRORS + 1))
   fi
 elif [ -f "$DIR/agent.json" ] && { [ -f "$DIR/AGENT.md" ] || [ -f "$DIR/agent.md" ]; }; then
