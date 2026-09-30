@@ -276,9 +276,9 @@ neboai publish ./my-agent
 
 The CLI will:
 1. Validate AGENT.md frontmatter and agent.json structure
-2. Upload AGENT.md as the manifest
-3. Upload agent.json as the config (with `platform=linux-amd64`)
-4. Submit for review
+2. Create the employee with AGENT.md as its manifest (or update it to the new version)
+3. Upload agent.json as its config
+4. Submit for review. The version is then reviewed automatically: a clean scan is approved and listed right away; anything flagged waits for a person on the NeboAI team.
 
 ## manifest.json
 
@@ -287,7 +287,7 @@ Marketplace identity — never uploaded as config.
 ```json
 {
   "id": "sdr",
-  "name": "@neboloop/agents/sdr",
+  "name": "@acme/agents/sdr",
   "title": "Sales Development Rep",
   "version": "1.0.0",
   "type": "agent",

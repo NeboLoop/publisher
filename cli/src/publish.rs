@@ -37,12 +37,7 @@ const PLATFORMS: &[&str] = &[
     "windows-arm64",
 ];
 
-pub async fn run(
-    path: &str,
-    type_override: Option<&str>,
-    visibility: &str,
-    _resume: bool,
-) -> Result<()> {
+pub async fn run(path: &str, type_override: Option<&str>, visibility: &str) -> Result<()> {
     let dir = Path::new(path);
     if !dir.is_dir() {
         bail!("Path is not a directory: {path}");
@@ -62,24 +57,75 @@ pub async fn run(
 
     println!("\nPublishing as {artifact_type}...");
 
-    // Resolve the developer account to publish under (required by the create
-    // endpoint). Honors $NEBOAI_ACCOUNT (a slug) if set, else the first account.
+    // The publisher account to publish under. Your personal account is set up
+    // for free on first use; $NEBOAI_ACCOUNT (a handle) picks a team account.
     let account_slug = std::env::var("NEBOAI_ACCOUNT").ok();
-    let account_id = api::resolve_account(account_slug.as_deref()).await?;
+    let account = api::resolve_account(account_slug.as_deref()).await?;
+    println!("Publisher: @{}", account.slug);
 
     match artifact_type {
-        ArtifactType::Skill => publish_skill(dir, &account_id, visibility).await?,
-        ArtifactType::Plugin => publish_plugin(dir, &account_id, visibility).await?,
-        ArtifactType::Agent => publish_agent(dir, &account_id, visibility).await?,
-        ArtifactType::App => publish_app(dir, &account_id, visibility).await?,
-        ArtifactType::Connector => publish_connector(dir, &account_id, visibility).await?,
-        ArtifactType::Collection => publish_collection(dir, &account_id, visibility).await?,
+        ArtifactType::Skill => publish_skill(dir, &account.id, visibility).await?,
+        ArtifactType::Plugin => publish_plugin(dir, &account.id, visibility).await?,
+        ArtifactType::Agent => publish_agent(dir, &account.id, visibility).await?,
+        ArtifactType::App => publish_app(dir, &account.id, visibility).await?,
+        ArtifactType::Connector => publish_connector(dir, &account.id, visibility).await?,
+        ArtifactType::Collection => publish_collection(dir, &account, visibility).await?,
     }
 
     Ok(())
 }
 
-async fn publish_collection(dir: &Path, _account_id: &str, visibility: &str) -> Result<()> {
+/// What `upsert` did: the item's ID and, for an item that already existed,
+/// its status before this publish.
+struct Upserted {
+    id: String,
+    previous_status: Option<String>,
+}
+
+/// Create the item, or — when you already published one with this name and
+/// type — update it to this version. Publishing is the same command either way.
+#[allow(clippy::too_many_arguments)]
+async fn upsert(
+    account_id: &str,
+    name: &str,
+    artifact_type: &str,
+    category: &str,
+    description: &str,
+    version: &str,
+    visibility: &str,
+    manifest: &str,
+) -> Result<Upserted> {
+    if visibility == "public" && description.chars().count() < 10 {
+        bail!("A public listing needs a description of at least 10 characters.");
+    }
+    match api::find_artifact(name, artifact_type).await? {
+        Some(existing) => {
+            println!("Updating {artifact_type}: {name} -> v{version}");
+            // The version is set before any upload: uploads are recorded
+            // under the item's current version.
+            api::update_manifest(&existing.id, manifest, version, description).await?;
+            println!("  Artifact ID: {}", existing.id);
+            Ok(Upserted {
+                id: existing.id,
+                previous_status: Some(existing.status),
+            })
+        }
+        None => {
+            println!("Creating {artifact_type}: {name}");
+            let id = api::create_artifact(
+                account_id, name, artifact_type, category, description, version, visibility, manifest,
+            )
+            .await?;
+            println!("  Artifact ID: {id}");
+            Ok(Upserted {
+                id,
+                previous_status: None,
+            })
+        }
+    }
+}
+
+async fn publish_collection(dir: &Path, account: &api::Account, visibility: &str) -> Result<()> {
     // A collection bundles existing artifacts. collection.json carries the
     // metadata plus an `items` array of {targetId, targetType}.
     let raw = read_file(dir, "collection.json")?;
@@ -99,8 +145,12 @@ async fn publish_collection(dir: &Path, _account_id: &str, visibility: &str) -> 
     let title = json.get("title").and_then(|v| v.as_str());
     let items = json.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
+    if api::find_artifact(&name, "collection").await?.is_some() {
+        bail!("You already have a collection named '{name}'. Change its items on neboai.com or through the NeboAI MCP.");
+    }
+
     println!("Creating collection: {name}");
-    let id = api::create_collection(&name, &description, visibility).await?;
+    let id = api::create_collection(&account.namespace_id, &name, &description, visibility).await?;
     println!("  Collection ID: {id}");
 
     for (i, item) in items.iter().enumerate() {
@@ -119,7 +169,7 @@ async fn publish_collection(dir: &Path, _account_id: &str, visibility: &str) -> 
     }
 
     apply_listing(dir, &id, &name, title).await?;
-    finalize(&id, &name, "Collection", &version, visibility).await?;
+    finalize(&id, &name, "Collection", &version, visibility, None).await?;
     Ok(())
 }
 
@@ -173,12 +223,10 @@ async fn publish_connector(dir: &Path, account_id: &str, visibility: &str) -> Re
     let description = cap_description(json.get("description").and_then(|v| v.as_str()).unwrap_or(""));
     let title = json.get("title").and_then(|v| v.as_str());
 
-    println!("Creating connector: {name}");
-    let id = api::create_artifact(account_id, &name, "connector", category, &description, &version, visibility, &raw).await?;
-    println!("  Artifact ID: {id}");
+    let item = upsert(account_id, &name, "connector", category, &description, &version, visibility, &raw).await?;
 
-    apply_listing(dir, &id, &name, title).await?;
-    finalize(&id, &name, "Connector", &version, visibility).await?;
+    apply_listing(dir, &item.id, &name, title).await?;
+    finalize(&item.id, &name, "Connector", &version, visibility, item.previous_status.as_deref()).await?;
     Ok(())
 }
 
@@ -190,41 +238,19 @@ async fn publish_skill(dir: &Path, account_id: &str, visibility: &str) -> Result
     let category = category_display_name(fm.category.as_deref().unwrap_or(""));
     let description = cap_description(&fm.description);
 
-    // Existing skill → version update: refresh manifest + version, re-upload
-    // the bundle. Same rule as plugins — version updates before content.
-    let mut updating = false;
-    let id = match api::find_artifact(&name, "skill").await? {
-        Some(existing) => {
-            updating = true;
-            println!("Updating skill: {name} -> {version}");
-            api::update_manifest(&existing, &skill_md, Some(&version)).await?;
-            existing
-        }
-        None => {
-            println!("Creating skill: {name}");
-            api::create_artifact(account_id, &name, "skill", category, &description, &version, visibility, &skill_md).await?
-        }
-    };
-    println!("  Artifact ID: {id}");
+    let item = upsert(account_id, &name, "skill", category, &description, &version, visibility, &skill_md).await?;
 
     // Upload the whole directory as a bundle so references/, scripts/, and
     // assets/ ship alongside SKILL.md. The server re-extracts SKILL.md into the
     // manifest, so this is safe (and a no-op in effect) for single-file skills.
-    let file_count = api::upload_bundle(&id, dir).await?;
+    let file_count = api::upload_bundle(&item.id, dir).await?;
     println!("  Uploaded bundle ({file_count} files: SKILL.md + references/scripts/assets)");
 
     // Set the human marketplace listing: a clean Title Case display name (the
     // frontmatter name is the lowercase runtime id) and the "What it does" long
     // description from LISTING.md, if present.
-    apply_listing(dir, &id, &name, fm.title.as_deref()).await?;
-
-    if updating {
-        // Same as plugins: submit 400s on an active artifact; the bundle
-        // upload already refreshed the served content for the new version.
-        println!("\nDone! Skill '{name}' updated to v{version}.");
-    } else {
-        finalize(&id, &name, "Skill", &version, visibility).await?;
-    }
+    apply_listing(dir, &item.id, &name, fm.title.as_deref()).await?;
+    finalize(&item.id, &name, "Skill", &version, visibility, item.previous_status.as_deref()).await?;
     Ok(())
 }
 
@@ -248,7 +274,7 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
     let category = category_display_name(
         plugin_json.get("category").and_then(|v| v.as_str()).unwrap_or(""),
     );
-    // Description from PLUGIN.md frontmatter (falls back to plugin.json), capped at 480 chars.
+    // Description from PLUGIN.md frontmatter (falls back to plugin.json), capped at 500 chars.
     let fm = extract_frontmatter_fields(&plugin_md).ok();
     let description = fm
         .as_ref()
@@ -258,29 +284,18 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
         .unwrap_or_else(|| format!("{name} — NeboAI plugin"));
     let description = cap_description(&description);
 
-    // Existing artifact → this is a version update: refresh the manifest and
-    // upload the new version's binaries (binary storage is version-scoped
-    // server-side, so prior versions are untouched). Only a brand-new slug
-    // goes through create.
-    let mut updating = false;
-    let id = match api::find_artifact(&name, "plugin").await? {
-        Some(existing) => {
-            updating = true;
-            println!("Updating plugin: {name} -> {version}");
-            api::update_manifest(&existing, &plugin_md, Some(&version)).await?;
-            existing
-        }
-        None => {
-            println!("Creating plugin: {name}");
-            api::create_artifact(account_id, &name, "plugin", category, &description, &version, visibility, &plugin_md).await?
-        }
-    };
-    println!("  Artifact ID: {id}");
+    // A plugin installs from its binaries: refuse before creating anything.
+    let dist_dir = dir.join("dist").join("plugin");
+    if !PLATFORMS.iter().any(|p| dist_dir.join(p).exists()) {
+        bail!("No platform binaries found in dist/plugin/. Run ./build.sh first. Expected at least one of: {PLATFORMS:?}");
+    }
+
+    let item = upsert(account_id, &name, "plugin", category, &description, &version, visibility, &plugin_md).await?;
 
     // Build skills tarball if skills/ exists
     let skills_tarball = if dir.join("skills").exists() {
         let tarball_path = std::env::temp_dir().join(format!("neboai-{name}-skills.tar.gz"));
-        build_skills_tarball(dir, &tarball_path)?;
+        build_tarball(&dir.join("skills"), "skills", &tarball_path)?;
         println!("  Skills tarball built");
         Some(tarball_path)
     } else {
@@ -288,7 +303,7 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
     };
 
     // Upload available platform binaries (config + skills on the first one).
-    let dist_dir = dir.join("dist").join("plugin");
+    // Each upload is scanned before it can ship.
     let mut first = true;
     for platform in PLATFORMS {
         let platform_dir = dist_dir.join(platform);
@@ -297,30 +312,20 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
         }
         let binary_path = find_binary(&platform_dir)?;
         api::upload_binary(
-            &id,
+            &item.id,
             platform,
             Some(&binary_path),
             &dir.join("PLUGIN.md"),
             if first { Some(&plugin_json_path) } else { None },
             if first { skills_tarball.as_deref() } else { None },
+            None,
         )
         .await?;
         first = false;
     }
 
-    if first {
-        bail!("No platform binaries found in dist/plugin/. Run ./build.sh first. Expected at least one of: {PLATFORMS:?}");
-    }
-
-    apply_listing(dir, &id, &name, None).await?;
-    if updating {
-        // Version updates on an active artifact don't go through submit —
-        // the server rejects it ("already active or in review"). Each binary
-        // upload already queued a scan→sign→napp submission for this version.
-        println!("\nDone! Plugin '{name}' v{version} uploaded; scan/sign pipeline queued per binary.");
-    } else {
-        finalize(&id, &name, "Plugin", &version, visibility).await?;
-    }
+    apply_listing(dir, &item.id, &name, None).await?;
+    finalize(&item.id, &name, "Plugin", &version, visibility, item.previous_status.as_deref()).await?;
     Ok(())
 }
 
@@ -333,22 +338,22 @@ async fn publish_agent(dir: &Path, account_id: &str, visibility: &str) -> Result
     let category = category_display_name(fm.category.as_deref().unwrap_or(""));
     let description = cap_description(&fm.description);
 
-    println!("Creating agent: {name}");
-    let id = api::create_artifact(account_id, &name, "agent", category, &description, &version, visibility, &agent_md).await?;
-    println!("  Artifact ID: {id}");
+    let item = upsert(account_id, &name, "agent", category, &description, &version, visibility, &agent_md).await?;
 
+    // agent.json is stored as the employee's config; employees have no binary.
     api::upload_binary(
-        &id,
+        &item.id,
         "linux-amd64", // Required field, but agents aren't platform-specific
         None,          // No binary file for agents
         &dir.join("AGENT.md"),
         Some(&agent_json_path),
         None,
+        None,
     )
     .await?;
 
-    apply_listing(dir, &id, &name, fm.title.as_deref()).await?;
-    finalize(&id, &name, "Agent", &version, visibility).await?;
+    apply_listing(dir, &item.id, &name, fm.title.as_deref()).await?;
+    finalize(&item.id, &name, "Agent", &version, visibility, item.previous_status.as_deref()).await?;
     Ok(())
 }
 
@@ -379,60 +384,93 @@ async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<(
         manifest.get("category").and_then(|v| v.as_str()).unwrap_or(""),
     );
 
-    println!("Creating app: {name}");
-    let id = api::create_artifact(account_id, &name, "app", category, &description, &version, visibility, &agent_md).await?;
-    println!("  Artifact ID: {id}");
-
-    let config_path = if dir.join("agent.json").exists() {
-        Some(dir.join("agent.json"))
-    } else {
-        None
-    };
-
-    api::upload_binary(
-        &id,
-        "linux-amd64",
-        None,
-        &dir.join("AGENT.md"),
-        config_path.as_deref(),
-        None,
-    )
-    .await?;
-
-    // Upload sidecar binaries if present
-    let sidecar_dist = dir.join("sidecar").join("target").join("release");
-    if sidecar_dist.exists() {
-        println!("  Uploading sidecar binary...");
-        if let Ok(binary) = find_binary(&sidecar_dist) {
-            api::upload_binary(
-                &id,
-                current_platform(),
-                Some(&binary),
-                &dir.join("AGENT.md"),
-                None,
-                None,
-            )
-            .await?;
-        }
+    // An app installs from its sidecar binaries (the UI rides along with
+    // them), so at least one is required — refuse before creating anything.
+    let sidecars = app_sidecars(dir)?;
+    if sidecars.is_empty() {
+        bail!(
+            "No sidecar binary found. Put one per platform in dist/app/<platform>/ (one of {PLATFORMS:?}), or build sidecar/ for this machine."
+        );
     }
 
-    apply_listing(dir, &id, &name, fm.as_ref().and_then(|f| f.title.as_deref())).await?;
-    finalize(&id, &name, "App", &version, visibility).await?;
+    let item = upsert(account_id, &name, "app", category, &description, &version, visibility, &agent_md).await?;
+
+    let ui_tarball = std::env::temp_dir().join(format!("neboai-{}-ui.tar.gz", item.id));
+    build_tarball(&dir.join("ui"), "ui", &ui_tarball)?;
+    let config_path = dir.join("agent.json");
+    let config_path = config_path.exists().then_some(config_path);
+
+    // The UI bundle and agent.json go with the first binary.
+    for (i, (platform, binary)) in sidecars.iter().enumerate() {
+        api::upload_binary(
+            &item.id,
+            platform,
+            Some(binary),
+            &dir.join("AGENT.md"),
+            if i == 0 { config_path.as_deref() } else { None },
+            None,
+            if i == 0 { Some(ui_tarball.as_path()) } else { None },
+        )
+        .await?;
+    }
+
+    apply_listing(dir, &item.id, &name, fm.as_ref().and_then(|f| f.title.as_deref())).await?;
+    finalize(&item.id, &name, "App", &version, visibility, item.previous_status.as_deref()).await?;
     Ok(())
+}
+
+/// An app's sidecar binaries: one per platform in dist/app/<platform>/, or the
+/// local build in sidecar/target/release/ for this machine's platform.
+fn app_sidecars(dir: &Path) -> Result<Vec<(&'static str, std::path::PathBuf)>> {
+    let dist_dir = dir.join("dist").join("app");
+    let mut found = Vec::new();
+    for platform in PLATFORMS {
+        let platform_dir = dist_dir.join(platform);
+        if platform_dir.is_dir() {
+            found.push((*platform, find_binary(&platform_dir)?));
+        }
+    }
+    if found.is_empty() {
+        let local = dir.join("sidecar").join("target").join("release");
+        if local.is_dir() {
+            if let Ok(binary) = find_binary(&local) {
+                found.push((current_platform(), binary));
+            }
+        }
+    }
+    Ok(found)
 }
 
 // --- Helpers ---
 
-/// Finish a publish: submit for review when going public, otherwise leave the
-/// artifact unlisted (private/loop have nothing to review). Keeps the
-/// create → bundle/upload → finalize shape identical across artifact types.
-async fn finalize(id: &str, name: &str, kind: &str, version: &str, visibility: &str) -> Result<()> {
-    if visibility == "public" {
-        println!("Submitting v{version} for review...");
-        api::submit(id, version).await?;
-        println!("\nDone! {kind} '{name}' submitted for review.");
-    } else {
-        println!("\nDone! {kind} '{name}' published ({visibility}). Not submitted for review.");
+/// Finish a publish. A public item is submitted for review when it is new or
+/// not yet published; a published item stays listed when updated, so its new
+/// version goes live without another submit (new binaries are still scanned
+/// before they ship). Private and loop items are not listed and not reviewed.
+async fn finalize(
+    id: &str,
+    name: &str,
+    kind: &str,
+    version: &str,
+    visibility: &str,
+    previous_status: Option<&str>,
+) -> Result<()> {
+    if visibility != "public" {
+        println!("\nDone! {kind} '{name}' v{version} saved ({visibility}). It is not listed, so it is not reviewed.");
+        return Ok(());
+    }
+    match previous_status {
+        Some("active") => {
+            println!("\nDone! {kind} '{name}' updated to v{version}. It stays published.");
+        }
+        Some("pending_review") | Some("review") => {
+            println!("\nDone! {kind} '{name}' updated to v{version}. It is already in review; check with `neboai status {id}`.");
+        }
+        _ => {
+            println!("Submitting v{version} for review...");
+            api::submit(id, version).await?;
+            println!("\nDone! {kind} '{name}' v{version} submitted. Item ID: {id}");
+        }
     }
     Ok(())
 }
@@ -482,7 +520,7 @@ fn clean_display_name(name: &str, title: Option<&str>) -> String {
             return t.to_string();
         }
     }
-    name.split(|c| c == '-' || c == '_')
+    name.split(['-', '_'])
         .filter(|w| !w.is_empty())
         .map(|w| {
             let mut chars = w.chars();
@@ -638,13 +676,13 @@ fn find_binary(dir: &Path) -> Result<std::path::PathBuf> {
         .context("No binary found in directory")
 }
 
-fn build_skills_tarball(dir: &Path, output: &Path) -> Result<()> {
-    let skills_dir = dir.join("skills");
+/// tar.gz `src` into `output`, rooted at `prefix/`.
+fn build_tarball(src: &Path, prefix: &str, output: &Path) -> Result<()> {
     let file = std::fs::File::create(output)?;
     let enc = flate2::write::GzEncoder::new(file, flate2::Compression::default());
     let mut tar = tar::Builder::new(enc);
-    tar.append_dir_all("skills", &skills_dir)?;
-    tar.finish()?;
+    tar.append_dir_all(prefix, src)?;
+    tar.into_inner()?.finish()?;
     Ok(())
 }
 
@@ -659,12 +697,15 @@ fn current_platform() -> &'static str {
     return "linux-amd64";
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     return "windows-amd64";
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    return "windows-arm64";
     #[cfg(not(any(
         all(target_os = "macos", target_arch = "aarch64"),
         all(target_os = "macos", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "aarch64"),
         all(target_os = "linux", target_arch = "x86_64"),
         all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "windows", target_arch = "aarch64"),
     )))]
     return "linux-amd64";
 }

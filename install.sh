@@ -1,101 +1,82 @@
 #!/usr/bin/env bash
-# NeboAI Publisher — Install Script
-# Installs the neboai CLI binary AND the skill into Claude Code / Claude Desktop.
+# NeboAI publisher installer: the neboai CLI plus the publisher skill.
 #
-# Usage: curl -fsSL https://raw.githubusercontent.com/NeboLoop/publisher/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/NeboLoop/publisher/main/install.sh | bash
+#
+# Installs from the latest GitHub release:
+#   - neboai-<os>-<arch>    -> $INSTALL_DIR/neboai   (default /usr/local/bin)
+#   - neboai-skill.tar.gz   -> $SKILLS_DIR/neboai    (default ~/.claude/skills)
+# Set NEBOAI_VERSION=v0.2.0 to pin a release.
 set -euo pipefail
 
 REPO="NeboLoop/publisher"
-BINARY="neboai"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
-
-# Detect platform
-OS="$(uname -s)"
-ARCH="$(uname -m)"
-
-case "$OS" in
-  Darwin)  PLATFORM_OS="darwin" ;;
-  Linux)   PLATFORM_OS="linux" ;;
-  MINGW*|MSYS*|CYGWIN*) PLATFORM_OS="windows" ;;
-  *) echo "Unsupported OS: $OS"; exit 1 ;;
-esac
-
-case "$ARCH" in
-  arm64|aarch64) PLATFORM_ARCH="arm64" ;;
-  x86_64|amd64)  PLATFORM_ARCH="amd64" ;;
-  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
-esac
-
-PLATFORM="${PLATFORM_OS}-${PLATFORM_ARCH}"
-
-echo "┌─────────────────────────────────────┐"
-echo "│  NeboAI Publisher Installer          │"
-echo "└─────────────────────────────────────┘"
-echo ""
-echo "Platform: $PLATFORM"
-
-# ─── Step 1: Install the CLI binary ───
-
-echo ""
-echo "→ Installing neboai CLI..."
-
-LATEST=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-
-DOWNLOAD_URL="https://github.com/$REPO/releases/download/$LATEST/${BINARY}-${PLATFORM}"
-if [ "$PLATFORM_OS" = "windows" ]; then
-  DOWNLOAD_URL="${DOWNLOAD_URL}.exe"
-fi
-
-TMPFILE=$(mktemp)
-curl -fsSL "$DOWNLOAD_URL" -o "$TMPFILE"
-chmod +x "$TMPFILE"
-
-if [ -w "$INSTALL_DIR" ]; then
-  mv "$TMPFILE" "$INSTALL_DIR/$BINARY"
+SKILLS_DIR="${SKILLS_DIR:-$HOME/.claude/skills}"
+if [ -n "${NEBOAI_VERSION:-}" ]; then
+  BASE="https://github.com/$REPO/releases/download/$NEBOAI_VERSION"
 else
-  sudo mv "$TMPFILE" "$INSTALL_DIR/$BINARY"
+  BASE="https://github.com/$REPO/releases/latest/download"
 fi
 
-echo "  ✓ neboai $LATEST installed to $INSTALL_DIR/$BINARY"
+case "$(uname -s)" in
+  Darwin) OS="darwin" ;;
+  Linux)  OS="linux" ;;
+  *) echo "Unsupported OS: $(uname -s). On Windows, use install.ps1." >&2; exit 1 ;;
+esac
+case "$(uname -m)" in
+  arm64|aarch64) ARCH="arm64" ;;
+  x86_64|amd64)  ARCH="amd64" ;;
+  *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+ASSET="neboai-$OS-$ARCH"
 
-# ─── Step 2: Install the skill into Claude Code ───
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+echo "NeboAI publisher installer ($OS-$ARCH)"
+echo ""
+
+fetch() { curl -fsSL --retry 3 "$BASE/$1" -o "$TMP/$1"; }
+
+echo "-> Downloading..."
+fetch "$ASSET"
+fetch neboai-skill.tar.gz
+fetch SHA256SUMS
+
+# Verify both downloads against the release checksums.
+if command -v sha256sum >/dev/null 2>&1; then SHA="sha256sum"; else SHA="shasum -a 256"; fi
+(cd "$TMP" && grep -E " ($ASSET|neboai-skill\.tar\.gz)\$" SHA256SUMS | $SHA -c - >/dev/null) \
+  || { echo "Checksum verification failed." >&2; exit 1; }
+
+# ─── CLI ───
+chmod +x "$TMP/$ASSET"
+if [ -d "$INSTALL_DIR" ] && [ -w "$INSTALL_DIR" ]; then
+  mv "$TMP/$ASSET" "$INSTALL_DIR/neboai"
+elif command -v sudo >/dev/null 2>&1; then
+  echo "   (sudo is needed to write to $INSTALL_DIR)"
+  sudo mkdir -p "$INSTALL_DIR"
+  sudo mv "$TMP/$ASSET" "$INSTALL_DIR/neboai"
+else
+  INSTALL_DIR="$HOME/.local/bin"
+  mkdir -p "$INSTALL_DIR"
+  mv "$TMP/$ASSET" "$INSTALL_DIR/neboai"
+fi
+echo "   neboai $("$INSTALL_DIR/neboai" --version | awk '{print $2}') installed to $INSTALL_DIR/neboai"
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*) ;;
+  *) echo "   Add $INSTALL_DIR to your PATH to run neboai." ;;
+esac
+
+# ─── Skill ───
+mkdir -p "$SKILLS_DIR"
+rm -rf "$SKILLS_DIR/neboai"
+tar -xzf "$TMP/neboai-skill.tar.gz" -C "$SKILLS_DIR"
+echo "   Publisher skill installed to $SKILLS_DIR/neboai"
 
 echo ""
-echo "→ Installing publisher skill..."
-
-CLAUDE_SKILLS_DIR="$HOME/.claude/skills"
-SKILL_DIR="$CLAUDE_SKILLS_DIR/neboai"
-
-# Clone the repo to get skill files
-TMPDIR=$(mktemp -d)
-git clone --depth 1 --quiet "https://github.com/$REPO.git" "$TMPDIR" 2>/dev/null
-
-# Install skill
-mkdir -p "$CLAUDE_SKILLS_DIR"
-rm -rf "$SKILL_DIR"
-mkdir -p "$SKILL_DIR"
-cp "$TMPDIR/SKILL.md" "$SKILL_DIR/"
-cp -r "$TMPDIR/references" "$SKILL_DIR/"
-cp -r "$TMPDIR/scripts" "$SKILL_DIR/"
-cp -r "$TMPDIR/examples" "$SKILL_DIR/"
-rm -rf "$TMPDIR"
-
-echo "  ✓ Skill installed to $SKILL_DIR"
-
-# ─── Done ───
-
+echo "Next: sign in with your NeboAI account"
+echo "   neboai auth login"
 echo ""
-echo "┌─────────────────────────────────────┐"
-echo "│  Ready!                             │"
-echo "└─────────────────────────────────────┘"
-echo ""
-echo "You can now publish to NeboLoop directly from Claude."
-echo ""
-echo "Just tell Claude what you want to build:"
-echo "  \"I have an idea for an agent that...\" "
-echo "  \"Build me a plugin that connects to...\" "
-echo "  \"Publish this to NeboLoop\" "
-echo ""
-echo "Claude handles everything — building, validating,"
-echo "authenticating, and publishing. You just describe your idea."
-echo ""
+echo "Then ask your AI tool, for example:"
+echo "   \"I have an idea for a skill that...\""
+echo "   \"Publish this to NeboAI\""

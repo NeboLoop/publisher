@@ -1,0 +1,40 @@
+# Homebrew formula template for the neboai CLI. The release workflow renders it
+# with envsubst (PKG_VERSION + one SHA per binary) and pushes the result to
+# NeboLoop/homebrew-tap as Formula/neboai.rb, so `brew tap NeboLoop/tap &&
+# brew install neboai` installs the release that was just tagged.
+class Neboai < Formula
+  desc "Build, validate and publish to the NeboAI marketplace"
+  homepage "https://neboai.com/learn/neboai"
+  version "${PKG_VERSION}"
+  license "Apache-2.0"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/NeboLoop/publisher/releases/download/v${PKG_VERSION}/neboai-darwin-arm64"
+      sha256 "${SHA_DARWIN_ARM64}"
+    end
+    on_intel do
+      url "https://github.com/NeboLoop/publisher/releases/download/v${PKG_VERSION}/neboai-darwin-amd64"
+      sha256 "${SHA_DARWIN_AMD64}"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/NeboLoop/publisher/releases/download/v${PKG_VERSION}/neboai-linux-arm64"
+      sha256 "${SHA_LINUX_ARM64}"
+    end
+    on_intel do
+      url "https://github.com/NeboLoop/publisher/releases/download/v${PKG_VERSION}/neboai-linux-amd64"
+      sha256 "${SHA_LINUX_AMD64}"
+    end
+  end
+
+  def install
+    bin.install Dir["neboai-*"].first => "neboai"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/neboai --version")
+  end
+end

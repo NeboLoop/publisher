@@ -1,71 +1,59 @@
-# NeboAI Publisher — Windows Install Script
-# Installs the neboai CLI binary AND the skill into Claude Code.
-# Usage: irm https://raw.githubusercontent.com/NeboLoop/publisher/main/install.ps1 | iex
+# NeboAI publisher installer for Windows: the neboai CLI plus the publisher skill.
+#
+#   irm https://raw.githubusercontent.com/NeboLoop/publisher/main/install.ps1 | iex
+#
+# Installs from the latest GitHub release:
+#   - neboai-windows-amd64.exe -> %LOCALAPPDATA%\Programs\neboai\neboai.exe (added to your PATH)
+#   - neboai-skill.tar.gz      -> %USERPROFILE%\.claude\skills\neboai
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 
-$repo = "NeboLoop/publisher"
-$binary = "neboai"
+$base = "https://github.com/NeboLoop/publisher/releases/latest/download"
 $installDir = "$env:LOCALAPPDATA\Programs\neboai"
+$skillsDir = "$env:USERPROFILE\.claude\skills"
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("neboai-" + [System.Guid]::NewGuid().ToString("N").Substring(0, 8))
+New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 
+Write-Host "NeboAI publisher installer (windows-amd64)"
 Write-Host ""
-Write-Host "  NeboAI Publisher Installer" -ForegroundColor Cyan
-Write-Host ""
-
-# --- Step 1: Install CLI binary ---
-
-Write-Host "-> Installing neboai CLI..." -ForegroundColor White
-
-$release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
-$version = $release.tag_name
-$url = "https://github.com/$repo/releases/download/$version/${binary}-windows-amd64.exe"
-
-$tmpFile = [System.IO.Path]::GetTempFileName() + ".exe"
-Invoke-WebRequest -Uri $url -OutFile $tmpFile
-
-New-Item -ItemType Directory -Force -Path $installDir | Out-Null
-Move-Item -Force $tmpFile "$installDir\$binary.exe"
-
-# Add to PATH
-$currentPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-if ($currentPath -notlike "*$installDir*") {
-    [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$installDir", "User")
-    $env:PATH += ";$installDir"
+Write-Host "-> Downloading..."
+foreach ($f in @("neboai-windows-amd64.exe", "neboai-skill.tar.gz", "SHA256SUMS")) {
+    Invoke-WebRequest -UseBasicParsing -Uri "$base/$f" -OutFile (Join-Path $tmp $f)
 }
 
-Write-Host "  Done: $binary $version" -ForegroundColor Green
+# Verify both downloads against the release checksums.
+$sums = @{}
+Get-Content (Join-Path $tmp "SHA256SUMS") | ForEach-Object {
+    $parts = $_ -split "\s+", 2
+    if ($parts.Count -eq 2) { $sums[$parts[1].TrimStart("*")] = $parts[0] }
+}
+foreach ($f in @("neboai-windows-amd64.exe", "neboai-skill.tar.gz")) {
+    $actual = (Get-FileHash -Algorithm SHA256 (Join-Path $tmp $f)).Hash.ToLower()
+    if ($sums[$f] -ne $actual) { throw "Checksum verification failed for $f" }
+}
 
-# --- Step 2: Install skill into Claude Code ---
+# --- CLI ---
+New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+Move-Item -Force (Join-Path $tmp "neboai-windows-amd64.exe") "$installDir\neboai.exe"
+$userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+if (-not (($userPath -split ";") -contains $installDir)) {
+    [Environment]::SetEnvironmentVariable("PATH", "$userPath;$installDir", "User")
+    $env:PATH += ";$installDir"
+}
+Write-Host "   $(& "$installDir\neboai.exe" --version) installed to $installDir\neboai.exe"
 
-Write-Host "-> Installing publisher skill..." -ForegroundColor White
-
-$claudeSkillsDir = "$env:USERPROFILE\.claude\skills\neboai"
-
-# Clone repo to temp
-$tmpDir = [System.IO.Path]::GetTempPath() + "neboai-install-" + [System.Guid]::NewGuid().ToString("N").Substring(0,8)
-git clone --depth 1 --quiet "https://github.com/$repo.git" $tmpDir 2>$null
-
-# Copy skill files
-New-Item -ItemType Directory -Force -Path $claudeSkillsDir | Out-Null
-Copy-Item "$tmpDir\SKILL.md" $claudeSkillsDir -Force
-Copy-Item "$tmpDir\references" $claudeSkillsDir -Recurse -Force
-Copy-Item "$tmpDir\scripts" $claudeSkillsDir -Recurse -Force
-Copy-Item "$tmpDir\examples" $claudeSkillsDir -Recurse -Force
-Remove-Item $tmpDir -Recurse -Force
-
-Write-Host "  Done: skill installed" -ForegroundColor Green
-
-# --- Done ---
+# --- Skill ---
+New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+if (Test-Path "$skillsDir\neboai") { Remove-Item -Recurse -Force "$skillsDir\neboai" }
+tar -xzf (Join-Path $tmp "neboai-skill.tar.gz") -C $skillsDir
+if ($LASTEXITCODE -ne 0) { throw "Could not unpack the publisher skill" }
+Write-Host "   Publisher skill installed to $skillsDir\neboai"
+Remove-Item -Recurse -Force $tmp
 
 Write-Host ""
-Write-Host "  Ready!" -ForegroundColor Green
+Write-Host "Next: sign in with your NeboAI account (open a new terminal first)"
+Write-Host "   neboai auth login"
 Write-Host ""
-Write-Host "  You can now publish to NeboLoop directly from Claude." -ForegroundColor White
-Write-Host ""
-Write-Host "  Just tell Claude what you want to build:" -ForegroundColor White
-Write-Host '    "I have an idea for an agent that..."' -ForegroundColor Yellow
-Write-Host '    "Build me a plugin that connects to..."' -ForegroundColor Yellow
-Write-Host '    "Publish this to NeboLoop"' -ForegroundColor Yellow
-Write-Host ""
-Write-Host "  Claude handles everything - building, validating," -ForegroundColor Gray
-Write-Host "  authenticating, and publishing. You just describe your idea." -ForegroundColor Gray
-Write-Host ""
+Write-Host "Then ask your AI tool, for example:"
+Write-Host '   "I have an idea for a skill that..."'
+Write-Host '   "Publish this to NeboAI"'

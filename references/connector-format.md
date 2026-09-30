@@ -46,7 +46,7 @@ Top-level keys alongside `mcpServers` are read by the publisher tooling for the 
 ## Publishing
 
 - **CLI:** `neboai publish ./my-connector` (auto-detected from `connector.json`). Add a `LISTING.md` for the long marketplace description.
-- **MCP:** `connector(action: create, name: "...", manifestContent: "{...mcpServers...}")`, then `connector(action: submit, id, version)`. The full `mcpServers` JSON goes in `manifestContent`.
+- **MCP:** `connector(action: create, name: "...", manifestContent: "{...mcpServers...}")`, then `connector(action: update, id, visibility: "public")` and `connector(action: submit, id, version)`. The full `mcpServers` JSON goes in `manifestContent`. The version is then reviewed automatically: a clean scan is approved and listed right away; anything flagged waits for a person on the NeboAI team.
 
 ## Gotchas
 

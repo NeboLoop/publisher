@@ -1,286 +1,152 @@
 # NeboAI Publisher
 
-Build, validate, and publish skills, plugins, agents, and apps to the [NeboLoop](https://neboai.com) marketplace.
+Build, validate and publish skills, employees, plugins, apps, connectors and collections to the [NeboAI marketplace](https://neboai.com/marketplace), from the AI tools you already use.
 
-This repo contains two things:
+This repo has two parts:
 
-1. **`neboai` CLI** — A Rust binary that handles authentication, validation, and publishing
-2. **Publisher Skill** — An [Agent Skills](https://agentskills.io)-standard skill that teaches AI coding agents (Claude Code, Cursor, VS Code Copilot, etc.) how to build and publish NeboLoop artifacts
+1. **The publisher skill** (`SKILL.md`, `references/`, `scripts/`, `examples/`): an [Agent Skills](https://agentskills.io) skill that teaches an AI tool how to turn an idea into a marketplace item and publish it.
+2. **The `neboai` CLI** (`cli/`): a small Rust binary that signs you in, validates an item's files and publishes them.
 
-## Supported Platforms
-
-| Platform | Architecture | Binary |
-|----------|-------------|--------|
-| macOS | Apple Silicon (M1/M2/M3/M4) | `neboai-darwin-arm64` |
-| macOS | Intel | `neboai-darwin-amd64` |
-| Linux | ARM64 | `neboai-linux-arm64` |
-| Linux | x86_64 | `neboai-linux-amd64` |
-| Windows | x86_64 | `neboai-windows-amd64.exe` |
+Learn more at [neboai.com/learn/neboai](https://neboai.com/learn/neboai).
 
 ## Install
 
-### Quick Install (recommended)
+### macOS and Linux: CLI and skill
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NeboLoop/publisher/main/install.sh | bash
 ```
 
-Downloads the pre-built binary for your platform and optionally installs the skill for Claude Code.
+Installs the `neboai` binary to `/usr/local/bin` (override with `INSTALL_DIR=...`) and the skill to `~/.claude/skills/neboai` (override with `SKILLS_DIR=...`), both from the latest release, checked against its `SHA256SUMS`.
 
-### Homebrew (macOS / Linux)
-
-```bash
-brew tap NeboLoop/tap
-brew install neboai
-```
-
-### npm / pnpm
-
-```bash
-pnpm add -g @neboai/publisher
-```
-
-Downloads the correct platform binary automatically during install.
-
-### Cargo (build from source)
-
-```bash
-git clone https://github.com/NeboLoop/publisher.git
-cd publisher/cli
-cargo install --path .
-```
-
-### Windows (PowerShell)
+### Windows: CLI and skill
 
 ```powershell
 irm https://raw.githubusercontent.com/NeboLoop/publisher/main/install.ps1 | iex
 ```
 
-### Manual Download
+Installs `neboai.exe` to `%LOCALAPPDATA%\Programs\neboai` (added to your PATH) and the skill to `%USERPROFILE%\.claude\skills\neboai`.
 
-Download from [Releases](https://github.com/NeboLoop/publisher/releases), make executable, add to PATH.
-
-The install script automatically:
-1. Downloads the correct binary for your platform
-2. Installs the publisher skill into Claude Code (`~/.claude/skills/neboai`)
-
-After install, just talk to Claude: *"publish this to NeboLoop"* — it handles everything.
-
----
-
-## How It Works (Zero Friction)
-
-```
-You: "publish this skill to NeboLoop"
-         │
-         ▼
-┌─ Claude Code ────────────────────────┐
-│  Skill activates → runs neboai CLI   │
-└──────────┬───────────────────────────┘
-           │
-           ▼
-┌─ neboai CLI ─────────────────────────┐
-│  1. Not authenticated? Opens browser │
-│  2. User clicks "Approve"            │
-│  3. Validates artifact locally        │
-│  4. Uploads to NeboLoop              │
-│  5. Submits for review               │
-└──────────────────────────────────────┘
-```
-
-No manual auth step. No config files. No tokens to copy-paste. First time you publish, the browser opens, you approve, and it continues automatically.
-
----
-
-## Install for Other Agents
-
-### Cursor / VS Code / Gemini CLI / OpenAI Codex / Any Agent Skills-compatible tool
-
-Copy the skill directory into your agent's skills path:
+### Homebrew: CLI only
 
 ```bash
-git clone https://github.com/NeboLoop/publisher.git /tmp/neboai-publisher
-cp -r /tmp/neboai-publisher/{SKILL.md,references,scripts,examples} ~/.your-agent/skills/neboai/
+brew tap NeboLoop/tap && brew install neboai
 ```
 
-The skill follows the [Agent Skills standard](https://agentskills.io) — it works anywhere.
-
----
-
-## Usage
-
-### Authenticate
+### npm or pnpm: CLI only
 
 ```bash
-neboai auth login     # Opens browser for OAuth
-neboai auth status    # Check if authenticated
-neboai auth logout    # Clear credentials
+pnpm add -g @neboai/publisher
+# or: npm install -g @neboai/publisher
 ```
 
-### Build + Publish (one command)
+The package fetches the matching `neboai` binary from this repo's release on install, or on first run if your package manager skips install scripts.
+
+### The skill in any other AI tool
+
+The skill uses the open Agent Skills format. Copy it into your tool's skills folder:
 
 ```bash
-neboai publish ./my-artifact
+git clone https://github.com/NeboLoop/publisher.git
+mkdir -p <your-tool-skills-folder>/neboai
+cp -R publisher/SKILL.md publisher/references publisher/scripts publisher/examples <your-tool-skills-folder>/neboai/
 ```
 
-Auto-detects the artifact type from directory contents, validates everything locally, uploads, and submits for review.
+Each release also has the skill as `neboai-skill.tar.gz`.
 
-### Validate Only
+### Supported platforms
+
+| Platform | Binary |
+|----------|--------|
+| macOS, Apple Silicon | `neboai-darwin-arm64` |
+| macOS, Intel | `neboai-darwin-amd64` |
+| Linux, ARM64 | `neboai-linux-arm64` |
+| Linux, x86_64 | `neboai-linux-amd64` |
+| Windows, x86_64 (also runs on Windows on Arm) | `neboai-windows-amd64.exe` |
+
+## Sign in
 
 ```bash
-neboai validate ./my-artifact
+neboai auth login
 ```
 
-Checks structure, YAML/JSON validity, required fields, naming conventions, budget math, and common mistakes — all locally before touching the API.
-
-### Manage Artifacts
+Opens your browser to sign in with your NeboAI account. Any account works: there is no fee, no developer-account step and no verification. Your publisher account (`@your-handle`) is set up for free the first time you sign in or publish. `neboai publish` also starts sign-in by itself if you haven't signed in yet.
 
 ```bash
-neboai list                    # List your published artifacts
-neboai status <id>             # Check submission/review status
-neboai binaries list <id>      # List uploaded binaries for an artifact
-neboai binaries delete <artifact-id> <binary-id>  # Delete a binary (fix duplicates)
+neboai auth status    # signed in? which handle?
+neboai auth logout
 ```
 
----
+## In a chat app: the NeboAI MCP connector
 
-## What Can You Publish?
+In Claude Desktop, ChatGPT or any app that supports remote MCP, add the NeboAI connector (`https://neboai.com/mcp`) instead of installing anything. The skill works through its tools. See [Publishing via MCP](https://neboai.com/docs/mcp-publishing).
 
-| Type | What It Is | Key Files |
-|------|-----------|-----------|
-| **Skill** | Markdown instructions that teach an agent | `SKILL.md` |
-| **Plugin** | Native binary providing tools, auth, events | `plugin.json` + `dist/` binaries |
-| **Agent** | Autonomous workflows with a persona | `AGENT.md` + `agent.json` |
-| **App** | Agent with a dedicated UI | `AGENT.md` + `manifest.json` + `ui/` |
+## Publish in three steps
 
-### Type Detection
+1. Install the skill and CLI, and sign in (above).
+2. Tell your AI tool what you want, for example: *"I have an idea for a skill that turns my meeting notes into a follow-up email. Build it and publish it to NeboAI."*
+3. It builds the files, checks them with `neboai validate`, publishes with `neboai publish` and tells you the review outcome.
 
-The CLI auto-detects what you're publishing:
+Or by hand:
 
-| Present in Directory | Detected As |
-|---------------------|-------------|
-| `manifest.json` with `"type": "app"` (or legacy `"artifact_type": "app"`) | App |
-| `plugin.json` | Plugin |
-| `agent.json` + `AGENT.md` | Agent |
-| `SKILL.md` (alone) | Skill |
-
-Override with `--type`: `neboai publish ./dir --type agent`
-
----
-
-## Building Artifacts
-
-The included skill teaches AI agents how to build each artifact type from scratch. If you're using Claude Code (or any compatible tool), just ask:
-
-- *"Create a new skill that teaches the agent to draft sales emails"*
-- *"Build a plugin that connects to the Stripe API"*
-- *"Scaffold an agent that monitors my inbox every 30 minutes"*
-- *"Build me a deal tracker app with a pipeline UI"*
-
-The agent will use the skill's references and examples to generate correct, publish-ready artifacts.
-
-### Language Preference
-
-For plugins and app sidecars (compiled binaries), **Rust is strongly preferred**:
-
-- Single static binary — no runtime dependencies
-- Does not trigger antivirus heuristics (unlike Go/Python)
-- Cannot be modified by the agent at runtime (compiled, not interpreted)
-- Cross-compilation is straightforward
-- Memory-safe
-
----
-
-## Project Structure
-
-```
-.
-├── SKILL.md              # The Agent Skills-standard skill
-├── README.md             # This file
-├── install.sh            # curl | bash installer
-├── package.json          # npm package wrapper
-├── references/           # Deep-dive guides (loaded on demand by agents)
-│   ├── building-skills.md
-│   ├── building-plugins.md
-│   ├── building-agents.md
-│   ├── building-apps.md
-│   ├── skill-format.md
-│   ├── plugin-format.md
-│   ├── agent-format.md
-│   ├── app-format.md
-│   └── common-mistakes.md
-├── scripts/
-│   ├── validate.sh       # Quick validation without the full CLI
-│   └── postinstall.js    # npm postinstall binary downloader
-├── examples/             # Working examples of each artifact type
-│   ├── skill-example/
-│   ├── plugin-example/
-│   ├── agent-example/
-│   └── app-example/
-└── cli/                  # Rust CLI source code
-    ├── Cargo.toml
-    └── src/
-        ├── main.rs
-        ├── auth.rs
-        ├── api.rs
-        ├── detect.rs
-        ├── validate.rs
-        └── publish.rs
+```bash
+neboai validate ./my-skill
+neboai publish ./my-skill        # public: submitted for review, listed once approved
+neboai list                      # everything you've published, with its status
+neboai status <id>               # Draft / In review / Published
 ```
 
----
+`neboai publish ./dir --visibility private` (or `loop`) saves an item without listing it, so it isn't reviewed. Publishing a directory again updates the item to the version in its files. To publish under a team's account you belong to, set `NEBOAI_ACCOUNT=<team-handle>`.
 
-## Development
+## Review
 
-### Build the CLI locally
+Anyone can publish, free. Every public version is reviewed:
+
+- **Text-only items** (skills, employees, connectors, collections) get an automated content scan. A clean scan is approved at once and the item is listed immediately.
+- **Items with binaries** (plugins and apps) are scanned in the background, and approved automatically when the scan is clean. Plugins and apps need at least one platform binary.
+- Anything the scan flags waits for a person on the NeboAI team.
+
+A listed item stays listed when you publish an update. More in the [publishing overview](https://neboai.com/help/publish-overview) and the [publisher skill guide](https://neboai.com/help/publisher-skill).
+
+## What you can publish
+
+| Type | Files | Guide |
+|------|-------|-------|
+| Skill | `SKILL.md` (+ `references/`, `scripts/`, `assets/`) | [building-skills](references/building-skills.md), [skill-format](references/skill-format.md) |
+| Employee | `AGENT.md` + `agent.json` | [building-agents](references/building-agents.md), [agent-format](references/agent-format.md) |
+| Plugin | `PLUGIN.md` + `plugin.json` + binaries in `dist/plugin/<platform>/` | [building-plugins](references/building-plugins.md), [plugin-format](references/plugin-format.md) |
+| App | `AGENT.md` + `manifest.json` + `ui/` + sidecar binaries | [building-apps](references/building-apps.md), [app-format](references/app-format.md) |
+| Connector | `connector.json` (an `mcpServers` block) | [connector-format](references/connector-format.md) |
+| Collection | `collection.json` | [collection-format](references/collection-format.md) |
+
+Working examples are in [`examples/`](examples/). Listing advice: [listing-quality](references/listing-quality.md).
+
+## CLI reference
+
+```
+neboai auth login | status | logout
+neboai validate <dir> [--type skill|plugin|agent|app|connector|collection]
+neboai publish <dir> [--type ...] [--visibility public|private|loop]
+neboai list
+neboai status <id>
+neboai binaries list <id>
+neboai binaries delete <item-id> <binary-id>
+```
+
+Credentials are saved in your user config folder (`~/Library/Application Support/neboai/credentials.json` on macOS, `~/.config/neboai/credentials.json` on Linux, `%APPDATA%\neboai\credentials.json` on Windows). `NEBOAI_BASE_URL` points the CLI at another API (for local development).
+
+## Build from source
 
 ```bash
 cd cli
 cargo build --release
+./target/release/neboai --version
 ```
 
-Binary will be at `cli/target/release/neboai`.
+## Releasing
 
-### Run tests
-
-```bash
-cd cli
-cargo test
-```
-
-### Build for all platforms
-
-```bash
-cd cli
-./build-all.sh
-```
-
-Outputs binaries to `dist/` for each platform.
-
----
-
-## How It Works
-
-1. **`neboai auth login`** — Opens your browser for OAuth PKCE authentication with NeboLoop. Tokens stored in `~/.config/neboai/credentials.json`.
-
-2. **`neboai validate <dir>`** — Checks your artifact directory locally:
-   - Structure matches the detected type
-   - YAML frontmatter is valid (no duplicates, required fields)
-   - JSON parses cleanly (no trailing commas, no template vars in plugin.json)
-   - Names follow conventions (lowercase, hyphens, 1-64 chars)
-   - Versions are valid semver
-   - Budget math balances (activity budgets ≤ total_per_run)
-   - Platform binaries exist (plugins)
-   - `ui/index.html` exists (apps)
-
-3. **`neboai publish <dir>`** — Validates, then:
-   - Creates the artifact on NeboLoop, sending the manifest (SKILL.md / AGENT.md / PLUGIN.md) as `manifestContent`
-   - Uploads config (agent.json / plugin.json) — NEVER manifest.json
-   - Uploads binaries per-platform (plugins, app sidecars)
-   - Submits for review
-
----
+Bump `version` in `cli/Cargo.toml` and `package.json`, merge, then push a tag `vX.Y.Z`. The release workflow builds the five binaries, publishes them with `neboai-skill.tar.gz` and `SHA256SUMS` to the GitHub release, updates `Formula/neboai.rb` in [NeboLoop/homebrew-tap](https://github.com/NeboLoop/homebrew-tap) (secret `TAP_GITHUB_TOKEN`), and publishes `@neboai/publisher` to npm (secret `NPM_TOKEN`).
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)

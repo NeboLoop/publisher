@@ -5,7 +5,7 @@
   "name": "Weather API",
   "version": "1.0.0",
   "description": "Provides weather data tools for agents",
-  "author": "NeboLoop",
+  "author": "Acme",
   "platforms": {
     "darwin-arm64": {
       "binaryName": "weather-api",

@@ -34,7 +34,7 @@ Each `items` entry needs:
 
 ## Publishing
 
-- **CLI:** `neboai publish ./my-collection` creates the collection (`POST /collections`), adds each item (`POST /collections/{id}/items`), sets the listing, and submits when public. Add a `LISTING.md` for the long description.
+- **CLI:** `neboai publish ./my-collection` creates the collection (`POST /collections`), adds each item (`POST /collections/{id}/items`), sets the listing, and submits when public. Add a `LISTING.md` for the long description. The CLI creates collections only; change an existing collection's items with `collection(action: add-item | remove-item)` over MCP or on neboai.com.
 - **MCP:**
   ```
   collection(action: create, name: "Sales Stack", description: "...")

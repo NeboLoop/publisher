@@ -10,7 +10,7 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "neboai",
     version,
-    about = "Publish to the NeboLoop marketplace"
+    about = "Build, validate and publish to the NeboAI marketplace"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -19,7 +19,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Authenticate with NeboLoop
+    /// Sign in to NeboAI
     Auth {
         #[command(subcommand)]
         action: AuthAction,
@@ -32,24 +32,25 @@ enum Commands {
         #[arg(long, value_parser = ["skill", "plugin", "agent", "app", "connector", "collection"])]
         r#type: Option<String>,
     },
-    /// Publish an artifact to NeboLoop
+    /// Publish an artifact to the NeboAI marketplace
     Publish {
         /// Path to the artifact directory
         path: String,
         /// Override type detection
         #[arg(long, value_parser = ["skill", "plugin", "agent", "app", "connector", "collection"])]
         r#type: Option<String>,
-        /// Marketplace visibility. "public" submits for review; "private" and
-        /// "loop" stay unlisted (no review).
+        /// Marketplace visibility. "public" submits the version for review and
+        /// lists it once approved; "private" and "loop" are not listed (no review).
         #[arg(long, value_parser = ["public", "private", "loop"], default_value = "public")]
         visibility: String,
-        /// Resume a failed publish
-        #[arg(long)]
+        /// Accepted for compatibility; publishing is re-runnable, so running
+        /// the same command again picks up where it left off.
+        #[arg(long, hide = true)]
         resume: bool,
     },
-    /// List your published artifacts
+    /// List the items you have published
     List,
-    /// Check submission status
+    /// Show an item's review status
     Status {
         /// Artifact ID
         id: String,
@@ -63,11 +64,11 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum AuthAction {
-    /// Log in via OAuth (opens browser)
+    /// Sign in with your NeboAI account (opens your browser)
     Login,
-    /// Check authentication status
+    /// Show whether you are signed in, and your publisher handle
     Status,
-    /// Log out and clear credentials
+    /// Sign out and remove the saved credentials
     Logout,
 }
 
@@ -104,9 +105,9 @@ async fn main() -> anyhow::Result<()> {
             path,
             r#type,
             visibility,
-            resume,
+            resume: _,
         } => {
-            publish::run(&path, r#type.as_deref(), &visibility, resume).await?;
+            publish::run(&path, r#type.as_deref(), &visibility).await?;
         }
         Commands::List => {
             api::list_artifacts().await?;

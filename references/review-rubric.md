@@ -1,12 +1,12 @@
 # Review Rubric
 
-For reviewers approving marketplace submissions. Pairs with `listing-quality.md` (the publisher-facing standard). Two gates: a mechanical one enforced in code, and a human one enforced here.
+What the NeboAI team looks for when a submission reaches a person (the automated scan flagged it, or a listing was reported). Only the NeboAI team reviews: publishers never approve or reject anything, including their own work. Use this list to check a listing before you submit. Pairs with `listing-quality.md` (the publisher-facing standard).
 
 The bar is not "is this safe to run" — validation and binary signing already cover that. The bar is "will a first-time, non-technical user understand and trust this." That trust is the product.
 
-## Mechanical gate (enforce in `cli/src/validate.rs`)
+## Mechanical gate
 
-These are objective and should fail validation before a human ever sees the submission, using the same pattern as the existing structural checks:
+Objective checks. The marketplace itself enforces a 10–500 character description; hold your listing to the stricter bar below anyway:
 
 - [ ] `description` is present and at least 40 characters.
 - [ ] `category` is one of the live consumer shelves (reject freeform tags like "productivity").
@@ -15,7 +15,7 @@ These are objective and should fail validation before a human ever sees the subm
 - [ ] Any `select`/`radio` input has at least 2 options, each with a non-empty human `label`.
 - [ ] The listing includes at least one example asset (sample output or screenshot reference).
 
-A failure here returns a specific message and blocks submission.
+Fix any of these before you submit.
 
 ## Human review checklist (judgment)
 
@@ -31,9 +31,9 @@ Run every item. One failure = send back with a reason.
 
 ## Decisions
 
-**Approve** — clears the mechanical gate and every human item. Approving signs the binaries, builds the `.napp`, and activates the listing.
+**Approved** — clears the mechanical gate and every human item. Approval signs the binaries, builds the `.napp`, and lists the item.
 
-**Reject with reason** — name the specific item and quote the offending line. Templates:
+**Sent back with a reason** — the reviewer names the specific item and quotes the offending line. The item returns to Draft; fix it and publish again. Typical reasons:
 
 - "Description leads with mechanism. Rewrite as the outcome the user gets — see `listing-quality.md` §1."
 - "Input label '…' reads like a code field. Use plain language a non-technical user understands — §2."

@@ -1,7 +1,7 @@
 ---
 name: neboai
-description: Build, validate, and publish skills, plugins, agents, and apps to the NeboLoop marketplace. Use when the user wants to publish something to NeboLoop, create a new skill/plugin/agent/app, build something for Nebo, put their idea on the marketplace, monetize an automation, or share their creation. Also triggers on "publish to Nebo", "create a skill", "build a plugin", "make an agent", "I have an idea for...", "can I sell this on Nebo?".
-compatibility: Works with NeboLoop MCP tools (Claude Desktop) or neboai CLI (Claude Code). Nebo is the operating system for AI employees, for macOS, Windows, and Linux.
+description: Build, validate, and publish skills, plugins, employees (agents), and apps to the NeboAI marketplace. Use when the user wants to publish something to NeboAI, create a new skill/plugin/agent/app, build something for Nebo, put their idea on the marketplace, monetize an automation, or share their creation. Also triggers on "publish to Nebo", "create a skill", "build a plugin", "make an agent", "I have an idea for...", "can I sell this on Nebo?".
+compatibility: Works with the NeboAI MCP connector (chat apps such as Claude Desktop) or the neboai CLI (coding tools such as Claude Code). Nebo is the operating system for AI employees, for macOS, Windows, and Linux.
 allowed-tools: Bash(neboai *) Bash(cargo *) Bash(rustc *) Read Write Edit Glob Grep
 triggers:
   - publish to nebo
@@ -11,15 +11,16 @@ triggers:
   - build an app
   - I have an idea
   - sell on nebo
+  - neboai
   - neboloop
   - nebo marketplace
 metadata:
-  author: neboloop
-  version: "0.2.2"
+  author: neboai
+  version: "0.3.0"
 ---
-# NeboLoop — From Idea to Marketplace
+# NeboAI — From Idea to Marketplace
 
-You are the user's publishing partner. They have an idea — you turn it into a real, published product on the NeboLoop marketplace. They never need to understand file formats, YAML, JSON, or technical details. You handle everything.
+You are the user's publishing partner. They have an idea — you turn it into a real, published product on the NeboAI marketplace. They never need to understand file formats, YAML, JSON, or technical details. You handle everything.
 
 ## Your Role
 
@@ -27,7 +28,7 @@ You are the user's publishing partner. They have an idea — you turn it into a 
 2. **Decide** — Pick the right artifact type (skill, plugin, agent, or app)
 3. **Build** — Generate all required files with correct structure
 4. **Validate** — Check everything before publishing
-5. **Publish** — Submit to NeboLoop marketplace automatically
+5. **Publish** — Submit to the NeboAI marketplace automatically
 
 The user says things like:
 - "I want to build something that sends me a morning briefing"
@@ -39,9 +40,16 @@ You respond by asking clarifying questions (if needed), then you build it and pu
 
 ## How Publishing Works (Behind the Scenes)
 
-**Claude Desktop users:** You use the NeboLoop MCP tools directly. The user is already authenticated through their MCP connection. They don't need to do anything.
+**Chat apps (e.g. Claude Desktop):** You use the NeboAI MCP connector's tools directly. The user is already signed in through the connector. They don't need to do anything.
 
-**Claude Code users:** You use the `neboai` CLI. If they haven't authenticated yet, the CLI automatically opens their browser — they click one button, and it continues. Zero friction.
+**Coding tools (e.g. Claude Code, Cursor):** You use the `neboai` CLI. If they haven't signed in yet, the CLI opens their browser to sign in to NeboAI, and continues when they're done.
+
+**Anyone with a NeboAI account can publish, free.** There is no fee, no developer-account step and no verification. The publisher account behind their handle (`@their-handle`) is set up automatically the first time they publish.
+
+**Every public version is reviewed automatically:**
+- Text-only items (skills, employees, connectors, collections) get a content scan. A clean scan is approved at once and the item is listed immediately.
+- Items with binaries (plugins, apps) are scanned in the background (static analysis of each binary) and approved automatically when clean.
+- Anything the scan flags waits for a person on the NeboAI team. Only the NeboAI team reviews; you never approve anything yourself, including your own work.
 
 **The user never needs to know which path you're using.** Just build it and publish it.
 
@@ -66,7 +74,7 @@ When a user describes an idea without technical specifics, follow this flow:
 **4. Publish it**
 - Use MCP or CLI (whichever is available)
 - Handle any errors yourself (retry, fix, re-publish)
-- Tell the user: "Done! Your [thing] is now on the NeboLoop marketplace."
+- Tell the user what happened: published (approved by the automated review), or in review (a person will look at it). Never promise a listing before the review says approved.
 
 **Never:**
 - Ask which artifact type to use (you decide)
@@ -862,94 +870,85 @@ Detect your environment and use the appropriate path. **Never ask the user to ch
 ### Detecting Your Path
 
 Check your available tools:
-- If any of these exist in your tool list → **use MCP path:**
-  - `mcp__claude_ai_NeboLoop__skill`, `mcp__claude_ai_NeboLoop__agent`, `mcp__claude_ai_NeboLoop__plugin`, `mcp__claude_ai_NeboLoop__developer`
-  - `mcp__levee__skill`, `mcp__levee__agent`, `mcp__levee__plugin`, `mcp__levee__developer`
-- Otherwise → **use CLI path** (`neboai publish <directory>`)
+- If the NeboAI MCP connector's tools are in your tool list → **use the MCP path.** They are named `skill`, `agent`, `plugin`, `connector`, `collection`, `developer`, `marketplace`, usually with a connector prefix such as `mcp__claude_ai_NeboAI__skill` (older installs: `mcp__claude_ai_NeboLoop__skill`, `mcp__levee__skill`).
+- Otherwise → **use the CLI path** (`neboai publish <directory>`).
 
-Use `ToolSearch` to discover NeboLoop tools if unsure: search for "neboloop" or "levee".
+Use `ToolSearch` to discover the connector's tools if unsure: search for "neboai".
 
-### MCP Path (Claude Desktop / any MCP-connected environment)
+### MCP Path (chat apps / any MCP-connected environment)
 
-The user is already authenticated. No auth step needed.
+The user is already signed in. No auth step needed. The MCP connector is the publish pathway: everything below is a tool call, plus a `curl` for file uploads.
 
-**Step 1: Select developer account (required for submission and binary uploads)**
+**Publisher account:** nothing to do. The user's free publisher account is set up automatically on their first submit or upload token. `developer(resource: account, action: create)` is optional (it returns the existing account). Only when publishing for a **team** the user belongs to, select that team's account first: `developer(resource: account, action: select, id | slug)`.
+
+**Step 1: Create the item** (a new item starts `private`; pass `visibility: "public"` or set it before submitting)
+
 ```
-developer(resource: account, action: select, id: "<developer-account-id>")
-```
-If no account exists, call `developer(resource: account, action: create, name: "Developer Name")` first.
-Note: Creating private artifacts does NOT require a developer account — only submission to the marketplace does.
-
-**Step 2: Create the artifact**
-
-For skills:
-```
-skill(action: create, name: "my-skill-name", manifestContent: "<entire SKILL.md content>")
+skill(action: create, name: "my-skill-name", description: "...", manifestContent: "<entire SKILL.md>", version: "1.0.0")
+agent(action: create, name: "my-employee", description: "...", manifestContent: "<entire AGENT.md>", version: "1.0.0")
+plugin(action: create, name: "my-plugin", description: "...", manifestContent: "<entire PLUGIN.md>", version: "1.0.0")
+connector(action: create, name: "my-connector", description: "...", manifestContent: "<connector.json with an mcpServers block>")
+collection(action: create, ...)  then  collection(action: add-item, ...)
 ```
 
-For agents:
-```
-agent(action: create, name: "my-agent-name", manifestContent: "<entire AGENT.md content>")
-```
+A description of **10–500 characters** is required to submit.
 
-For plugins:
+**Step 2: Upload files (only what the type needs)**
+
+- Multi-file skill (references/, scripts/, assets/): `skill(action: bundle-token, id)` → run the returned curl with a `.zip` of the skill directory.
+- Employee: `agent(action: binary-token, id)` → run the returned curl with `config=@agent.json`.
+- Plugin: for each platform, `plugin(action: binary-token, id, platform)` → run the returned curl with `file=@<binary>` (and `config=@plugin.json` + `skills=@skills.tar.gz` on the first platform).
+- App: `agent(action: binary-token, id)` → curl with `file=@<sidecar>`, `platform=<platform>`, and `ui=@ui.tar.gz` on the first platform.
+
+Upload tokens last **5 minutes** and only open that one item's uploads. Get a fresh one if it expires. The server reads only these multipart fields: `file` (binary), `config` (agent.json / plugin.json), `skills` (plugin skills tarball), `ui` (app frontend tarball), `platform`. The manifest is set with `manifestContent` on create/update, never uploaded. Use `curl --http1.1` for large uploads.
+
+**Step 3: Make it public and submit**
+
 ```
-plugin(action: create, name: "my-plugin-name", category: "connectors")
-```
-
-**Step 3: Upload config and binaries (agents and plugins)**
-
-Get an upload token:
-```
-skill(action: binary-token, id: "<ID>")
-plugin(action: binary-token, id: "<ID>")
-```
-
-Then use the returned curl command to upload. The server reads only these multipart form fields:
-- `file` — the binary (plugins and app sidecars; NOT `binary`)
-- `config` — the config JSON (agent.json or plugin.json)
-- `skills` — skills tarball (plugins, first platform upload only)
-- `platform` — platform key (e.g., `darwin-arm64`); ignored for agents/apps
-
-The manifest (SKILL.md / AGENT.md / PLUGIN.md) is **not** an upload field — it's set via `manifestContent` on create/update. Any `skill`/`manifest` form field is ignored by the server. For agents and apps the upload reads **only `config`** (no `platform`, no `file`).
-
-Use `--http1.1` for large uploads to avoid HTTP/2 stream errors.
-
-**Step 4: Submit for review**
-```
+skill(action: update, id: "<ID>", visibility: "public")
 skill(action: submit, id: "<ID>", version: "1.0.0")
-agent(action: submit, id: "<ID>", version: "1.0.0")
-plugin(action: submit, id: "<ID>", version: "1.0.0")
 ```
+(Same with `agent`, `plugin`, `connector`; collections use `set-visibility` and/or `submit`.)
 
-### CLI Path (Claude Code / Cursor / VS Code)
+Submit returns the review outcome:
+- `approved` — the automated review passed; the item is published.
+- `flagged` / `manual_review` — a person on the NeboAI team will review it.
+- For plugins and apps, the binary scan runs in the background (checked every 30 seconds); check with `get`.
+
+Plugins and apps **must** have at least one platform binary for the version, or submit is refused.
+
+**Never** call review or admin tools (for example a `review` tool), and never try to approve, reject or change a review status. Those are for the NeboAI team only.
+
+### CLI Path (coding tools: Claude Code, Cursor, VS Code, ...)
 
 ```bash
 neboai publish <directory>
 ```
 
 The CLI:
-1. Detects artifact type from directory contents
+1. Detects the item type from the directory contents
 2. Validates locally (structure, JSON, YAML, names, budgets)
-3. Authenticates automatically (opens browser on first use)
-4. Creates the artifact on NeboLoop
-5. Gets upload token, uploads config + binaries per platform
-6. Submits for review
+3. Signs in automatically (opens the browser on first use)
+4. Uses the user's publisher account (set up for free on first use; `NEBOAI_ACCOUNT=<team-handle>` picks a team account)
+5. Creates the item, or updates it to the new version if the user already published one with that name
+6. Uploads the bundle / config / binaries the type needs
+7. Submits for review and prints the outcome
 
 **Override type:** `neboai publish ./dir --type agent`
 
-**Visibility:** `neboai publish` defaults to `--visibility public` (submits for marketplace review). Use `--visibility private` (or `loop`) to publish unlisted without review — the CLI skips the submit step and tells the user it's unlisted.
+**Visibility:** `neboai publish` defaults to `--visibility public` (submitted for review, listed once approved). Use `--visibility private` (or `loop`) to keep it unlisted: no review, installable by the user (or their loop) right away.
 
 **Listing:** the CLI also sets the marketplace listing automatically — a clean Title Case display name (from the frontmatter `title:`, else derived from the lowercase id) and, if a `LISTING.md` is present, the long "What it does" description. See the Marketplace Listing section.
 
-**The user never runs auth commands.** Everything is automatic.
+If the CLI is missing, install it: `curl -fsSL https://raw.githubusercontent.com/NeboLoop/publisher/main/install.sh | bash` (Windows: `irm https://raw.githubusercontent.com/NeboLoop/publisher/main/install.ps1 | iex`). To sign in ahead of time: `neboai auth login`; `neboai auth status` shows the signed-in handle.
 
 ### What to Tell the User
 
-After publishing succeeds:
-- "Done! Your [skill/agent/plugin/app] has been submitted to the NeboLoop marketplace."
-- "It'll be reviewed shortly. You can check its status anytime."
-- Give them the artifact name and version
+After publishing succeeds, say what actually happened:
+- Approved: "Done! Your [skill/employee/plugin/app] is published on the NeboAI marketplace."
+- Flagged: "It's submitted. The automated check wants a person on the NeboAI team to take a look before it's listed."
+- Binaries scanning: "It's submitted. Your binaries are being scanned; it's listed as soon as the scan passes."
+- Give them the name, version and install code. There are no email notifications; check the status with `neboai status <id>` or `get`.
 
 If publishing fails, diagnose and fix it yourself. Don't dump error messages on non-technical users.
 
@@ -1000,7 +999,7 @@ Codes are Crockford Base32 (no I/L/O/U) in the format `PREFIX-XXXX-XXXX`.
 |--------|----------|
 | `SKIL-XXXX-XXXX` | Skill |
 | `PLUG-XXXX-XXXX` | Plugin |
-| `AGNT-XXXX-XXXX` | Agent |
+| `AGNT-XXXX-XXXX` | Employee (agent) |
 | `APPS-XXXX-XXXX` | App |
 | `CONN-XXXX-XXXX` | Connector |
 | `COLL-XXXX-XXXX` | Collection |
@@ -1018,8 +1017,8 @@ The manifest column is the content set via `manifestContent` on create/update �
 |------|----------|--------|--------|----------------|
 | Skill | SKILL.md | — | — | — |
 | Plugin | PLUGIN.md | plugin.json | Per-platform binary | skills/ tarball |
-| Agent | AGENT.md | agent.json (config only — no binary/platform) | — | — |
-| App | AGENT.md | agent.json (config only) | Sidecar uploaded separately | — |
+| Agent (employee) | AGENT.md | agent.json (config only — no binary/platform) | — | — |
+| App | AGENT.md | agent.json (with the first sidecar upload) | Per-platform sidecar binary + `ui` tarball (required) | — |
 | Connector | connector.json (the `mcpServers` block) | — | — | — |
 | Collection | — (created via `/collections`) | items added via `/collections/{id}/items` | — | — |
 
@@ -1042,13 +1041,17 @@ Set the human listing on any of them: `<type>(action: update, id, name: "Title C
 
 **CLI:**
 ```bash
-neboai list                    # List published artifacts
-neboai status <id>             # Check review status
+neboai list                    # List published items with their status
+neboai status <id>             # Status: Draft / In review / Published
 neboai binaries list <id>      # List uploaded binaries
 neboai binaries delete <artifact-id> <binary-id>  # Delete a binary (fix duplicates)
 ```
 
-**Updating an artifact (new version):** `neboai publish <dir>` handles it — it resolves an existing slug+type and updates in place (manifest + version first, then binaries) instead of failing on the create endpoint's unique constraint. Ordering matters and the CLI enforces it: the artifact's `version` field MUST be updated before uploading binaries, because the binaries endpoint records every upload under the artifact row's CURRENT version — upload first and the new bytes get filed under the old version label (and the upsert silently replaces that version's bytes). Update publishes do NOT call submit (the server rejects it on an active artifact); each binary upload auto-queues the scan → sign → napp build for the new version. Via MCP: `<type>(action: update, id, manifestContent, version)` — same rule, set the version in the same call or before any binary upload.
+**Statuses.** An item is **Draft** (not submitted, or sent back by a reviewer), **In review** (submitted; binaries scanning or waiting for a person), or **Published** (approved and listed). A rejected version goes back to Draft with the reviewer's notes; fix it and publish again.
+
+**Visibility.** `public` is shown in browse and search; `unlisted` is shown only on the publisher's storefront and collection pages; `private` is only the user (the default for a new MCP item); `loop` is shared with the user's loops. A public listing needs an approved review of the version being listed: setting `public` alone keeps the item a Draft until submit approves it.
+
+**Updating an artifact (new version):** `neboai publish <dir>` handles it — it finds the user's existing item with the same name and type and updates it in place (manifest + version first, then uploads) instead of failing on the create endpoint's unique constraint. Ordering matters and the CLI enforces it: the item's `version` MUST be updated before uploading binaries, because uploads are recorded under the item's CURRENT version — upload first and the new bytes get filed under the old version label. A **published** item stays listed when updated, so the new version goes live without another submit; new binaries are still scanned before they ship. An item that is still a Draft is submitted again. Via MCP: `<type>(action: update, id, manifestContent, version)` — set the version in the same call or before any binary upload — then `submit` with the new version to have it reviewed.
 
 ---
 
@@ -1058,7 +1061,7 @@ neboai binaries delete <artifact-id> <binary-id>  # Delete a binary (fix duplica
 2. **Agent/app uploads read only `config`.** No `file`, no `platform` — the server's agent branch ignores both. (The CLI still sends `platform=linux-amd64`, but it's unused.)
 3. **Plugin.json metadata must be hardcoded.** No `{{template_vars}}` in top-level scalar fields (id, slug, name, version, description, …) or platform entries — that's unfilled scaffolding and the validator rejects it. Nested structures MAY contain `{{...}}`: the `setup`/`auth` wizard flows and `events[].command` use Nebo's runtime `{{key}}` substitution, and third-party tool descriptions often mention `{{...}}` as prose.
 4. **JSON must be valid.** No trailing commas. Validate: `python3 -c "import json; json.load(open('file.json'))"`
-5. **Upload tokens expire in 5 minutes.** The CLI handles this automatically.
+5. **Upload tokens expire in 5 minutes and only open that one item's uploads.** The CLI uses the signed-in session instead, so it never needs one.
 6. **HTTP/1.1 for uploads.** HTTP/2 causes stream errors on large files. CLI handles this.
 7. **Skills tarball + config only on first platform upload** (plugins). Subsequent platforms are binary-only.
 8. **Plugin binaries: recommend darwin-arm64 + linux-amd64.** Missing platforms log a warning.
@@ -1081,7 +1084,9 @@ Handle these yourself — never dump errors on the user.
 | Duplicate version+platform (500) | Delete existing binary, re-upload |
 | Upload token expired | Get a fresh token and retry |
 | Validation failed | Fix the issue in your generated files and retry |
-| Auth failed (CLI) | The browser flow will retry automatically |
+| Auth failed (CLI) | Run `neboai auth login` again |
+| "description is required for marketplace submission" | Write a 10–500 character description and publish again |
+| "upload at least one platform binary" | Build the plugin/app binaries (dist/…/<platform>/) and publish again |
 | Name already taken | Suggest a variant or ask the user for a new name |
 
 **CLI tools:**
@@ -1103,7 +1108,7 @@ For deep dives on each artifact type:
 - [references/building-agents.md](references/building-agents.md) — Persona craft, workflow design, triggers, budgets, testing
 - [references/building-apps.md](references/building-apps.md) — Frontend SDK, sidecar architecture, state management, tool discovery
 - [references/listing-quality.md](references/listing-quality.md) — Writing a listing that gets installed: benefit-first description, plain-language inputs, name/category
-- [references/review-rubric.md](references/review-rubric.md) — Reviewer gates (mechanical + human judgment) for approving submissions
+- [references/review-rubric.md](references/review-rubric.md) — What NeboAI reviewers look for, so the user can check their listing before submitting
 
 ## Format Quick Reference
 
