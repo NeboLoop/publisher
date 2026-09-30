@@ -30,7 +30,9 @@ Installs `neboai.exe` to `%LOCALAPPDATA%\Programs\neboai` (added to your PATH) a
 ### Homebrew: CLI only
 
 ```bash
-brew tap NeboLoop/tap && brew install neboai
+brew tap NeboLoop/tap
+brew trust neboloop/tap   # Homebrew 7+ asks you to trust a third-party tap
+brew install neboai
 ```
 
 ### npm or pnpm: CLI only
