@@ -1,15 +1,15 @@
 {
   "name": "@neboai/publisher",
-  "version": "0.1.0",
-  "description": "Build, validate, and publish artifacts to the NeboLoop marketplace",
+  "version": "0.2.0",
+  "description": "The neboai CLI: build, validate and publish to the NeboAI marketplace",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/NeboLoop/publisher.git"
   },
-  "homepage": "https://neboai.com",
+  "homepage": "https://neboai.com/learn/neboai",
   "keywords": [
-    "neboloop",
+    "neboai",
     "nebo",
     "publish",
     "marketplace",
@@ -18,10 +18,10 @@
     "cli"
   ],
   "bin": {
-    "neboai": "./bin/neboai"
+    "neboai": "npm/neboai.js"
   },
   "scripts": {
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node npm/install.js"
   },
   "os": [
     "darwin",
@@ -33,10 +33,13 @@
     "x64"
   ],
   "files": [
-    "bin/",
-    "scripts/postinstall.js",
+    "npm/",
     "SKILL.md",
     "references/",
+    "scripts/",
     "examples/"
-  ]
+  ],
+  "engines": {
+    "node": ">=18"
+  }
 }

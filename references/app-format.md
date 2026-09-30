@@ -1,6 +1,6 @@
 # App Format
 
-Apps are agents with a dedicated frontend UI. They bundle a persona, an HTML frontend, and an optional native sidecar binary.
+Apps are agents with a dedicated frontend UI. They bundle a persona, an HTML frontend, and a native sidecar binary. The marketplace installs an app from its sidecar binaries, so a published app needs at least one.
 
 ## Directory Structure
 
@@ -16,7 +16,7 @@ my-app/
 ├── skills/               # Optional — skill docs for the agent
 │   └── workspace-mgmt/
 │       └── SKILL.md
-├── sidecar/              # Optional — native backend binary
+├── sidecar/              # Native backend (build it, or put per-platform builds in dist/app/<platform>/)
 │   ├── Cargo.toml
 │   ├── src/main.rs
 │   └── target/release/
@@ -163,11 +163,14 @@ The CLI will:
 1. Validate manifest.json (`type: "app"` present)
 2. Validate AGENT.md and agent.json (if present)
 3. Verify `ui/index.html` exists
-4. Upload AGENT.md as the agent payload
-5. Upload agent.json as config (apps are agent-type artifacts, so the publish path stores `agent.json` as config only — it does not upload a binary)
-6. Submit for review
+4. Find the sidecar binaries: one per platform in `dist/app/<platform>/` (e.g. `dist/app/darwin-arm64/my-app`), or the local build in `sidecar/target/release/` for this machine's platform. At least one is required.
+5. Create the app with AGENT.md as its manifest (or update it to the new version)
+6. Upload each sidecar binary; the first upload also carries `agent.json` (config) and a tar.gz of `ui/` (the `ui` field)
+7. Submit for review. The binaries are scanned in the background and the app is listed once the scan passes.
 
-> The marketplace `.napp` for an app carries the agent payload (`manifest.json`, `agent.json`, `AGENT.md`, `signatures.json`). The `ui/` directory is **not** bundled into the `.napp`, and there is **no** per-file size limit on `ui/`. Sidecar binaries are delivered through the separate per-platform binary upload path, not the agent config upload.
+> The marketplace `.napp` for an app carries the agent payload (`manifest.json`, `agent.json`, `AGENT.md`, `signatures.json`), the sidecar under `bin/`, and the uploaded UI under `ui/`.
+
+Via MCP: `agent(action: create, manifestContent: "<AGENT.md with artifact_type: app in its frontmatter>")`, then `agent(action: binary-token, id)` and the returned curl per platform (`file=@<sidecar>`, `platform=<platform>`, `ui=@ui.tar.gz`), then `agent(action: submit, id, version)`.
 
 ## Key Rules
 
@@ -177,4 +180,4 @@ The CLI will:
 - The launched sidecar binary must be a regular file — symlinks are rejected at launch (a symlinked dev binary like `bin/my-app → target/release/my-app` is fine for hot-reload detection, but the file that actually runs must resolve to a regular executable)
 - Sidecar startup timeout: 10 seconds default, max 120s (set via `startup_timeout`)
 - Window config accepts `title`, `width`, `height`, `resizable` (defaults: width 1024, height 768, resizable true). There are no `min_width`/`min_height` fields.
-- Apps without a sidecar (pure frontend) don't need binary uploads
+- A published app needs at least one sidecar binary for its version; submit is refused without one

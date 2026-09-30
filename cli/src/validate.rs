@@ -276,7 +276,12 @@ fn validate_connector(dir: &Path) -> Result<()> {
 
 fn validate_collection(dir: &Path) -> Result<()> {
     let json: serde_json::Value = read_json(&dir.join("collection.json"))?;
-    if json.get("name").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+    if json
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .is_empty()
+    {
         bail!("collection.json must have a non-empty 'name'");
     }
     // items is optional (can be added later) but if present each needs id + type.

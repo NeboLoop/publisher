@@ -4,7 +4,7 @@ dist/
 
 # Node
 node_modules/
-bin/
+vendor/
 
 # OS
 .DS_Store

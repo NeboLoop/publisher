@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 const AUTH_URL: &str = "https://neboai.com/oauth/authorize";
 const TOKEN_URL: &str = "https://neboai.com/oauth/token";
-// Dedicated first-party public client for the CLI (PKCE, no secret), registered
-// in the backend oauth_apps table under the nebo-official account. Uses its own
+// Dedicated first-party public client for the CLI (PKCE, no secret). Its access
+// token is an owner token that the NeboAI API accepts directly. Uses its own
 // port 19847 + /auth/neboai/callback redirect so it never collides with the Nebo
 // desktop app (which owns port 27895).
 const CLIENT_ID: &str = "nbl_neboai_cli";
@@ -49,51 +49,86 @@ fn save_credentials(creds: &Credentials) -> Result<()> {
     let path = credentials_path();
     let data = serde_json::to_string_pretty(creds)?;
     std::fs::write(&path, data)?;
+    // The token is an account credential: keep it readable by this user only.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    }
     Ok(())
 }
 
 pub async fn login() -> Result<()> {
-    // Generate PKCE verifier and challenge
-    let verifier = generate_pkce_verifier();
+    // PKCE verifier/challenge plus a state value tying the callback to this run.
+    let verifier = random_urlsafe(32);
     let challenge = generate_pkce_challenge(&verifier);
+    let state = random_urlsafe(16);
 
     let redirect_uri = format!("http://localhost:{REDIRECT_PORT}/auth/neboai/callback");
     let auth_url = format!(
-        "{AUTH_URL}?client_id={CLIENT_ID}&redirect_uri={}&response_type=code&scope={}&code_challenge={challenge}&code_challenge_method=S256",
+        "{AUTH_URL}?client_id={CLIENT_ID}&redirect_uri={}&response_type=code&scope={}&state={state}&code_challenge={challenge}&code_challenge_method=S256",
         urlencoding::encode(&redirect_uri),
         urlencoding::encode("openid profile email")
     );
 
-    println!("Opening browser for authentication...");
+    // Bind before opening the browser so the redirect always has a listener.
+    let server = tiny_http::Server::http(format!("127.0.0.1:{REDIRECT_PORT}")).map_err(|e| {
+        anyhow::anyhow!("Could not listen on port {REDIRECT_PORT} for the sign-in callback: {e}")
+    })?;
+
+    println!("Opening your browser to sign in to NeboAI...");
     println!("If it doesn't open, visit:\n{auth_url}\n");
-
     open::that(&auth_url).ok();
+    println!("Waiting for sign-in...");
 
-    // Start local server to receive callback
-    let server = tiny_http::Server::http(format!("127.0.0.1:{REDIRECT_PORT}"))
-        .map_err(|e| anyhow::anyhow!("Failed to start local callback server: {e}"))?;
-
-    println!("Waiting for authorization...");
-
-    let request = server.recv().context("Failed to receive callback")?;
-
-    let url = url::Url::parse(&format!("http://localhost{}", request.url()))?;
-    let code = url
-        .query_pairs()
-        .find(|(k, _)| k == "code")
-        .map(|(_, v)| v.to_string())
-        .context("No authorization code received")?;
-
-    // Respond to browser
-    let response = tiny_http::Response::from_string(
-        "<html><body><h1>Authenticated!</h1><p>You can close this tab.</p></body></html>",
-    )
-    .with_header(
-        "Content-Type: text/html"
-            .parse::<tiny_http::Header>()
-            .unwrap(),
-    );
-    request.respond(response).ok();
+    let code = loop {
+        let request = server
+            .recv_timeout(std::time::Duration::from_secs(600))
+            .context("Failed to receive the sign-in callback")?
+            .context("Timed out waiting for sign-in. Run `neboai auth login` again.")?;
+        let url = url::Url::parse(&format!("http://localhost{}", request.url()))?;
+        if url.path() != "/auth/neboai/callback" {
+            // Browsers also ask for /favicon.ico and the like.
+            request.respond(tiny_http::Response::empty(404)).ok();
+            continue;
+        }
+        let param = |name: &str| {
+            url.query_pairs()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.to_string())
+        };
+        let (page, result) = if let Some(err) = param("error") {
+            (
+                "Sign-in was cancelled. You can close this tab.",
+                Err(anyhow::anyhow!("Sign-in failed: {err}")),
+            )
+        } else if param("state").as_deref() != Some(state.as_str()) {
+            (
+                "Sign-in could not be verified. You can close this tab.",
+                Err(anyhow::anyhow!(
+                    "Sign-in failed: the callback did not match this request"
+                )),
+            )
+        } else if let Some(code) = param("code") {
+            ("Signed in to NeboAI. You can close this tab.", Ok(code))
+        } else {
+            (
+                "Sign-in failed. You can close this tab.",
+                Err(anyhow::anyhow!(
+                    "Sign-in failed: no authorization code received"
+                )),
+            )
+        };
+        let response =
+            tiny_http::Response::from_string(format!("<html><body><h1>{page}</h1></body></html>"))
+                .with_header(
+                    "Content-Type: text/html"
+                        .parse::<tiny_http::Header>()
+                        .unwrap(),
+                );
+        request.respond(response).ok();
+        break result?;
+    };
 
     // Exchange code for token
     let client = reqwest::Client::new();
@@ -131,22 +166,25 @@ pub async fn login() -> Result<()> {
     };
 
     save_credentials(&creds)?;
-    println!("Authenticated successfully.");
+    // Listing accounts also sets up the free publisher account on first use.
+    match crate::api::resolve_account(None).await {
+        Ok(account) => println!("Signed in. Publishing as @{}.", account.slug),
+        Err(_) => println!("Signed in."),
+    }
     Ok(())
 }
 
 pub async fn status() -> Result<()> {
     match load_credentials()? {
-        Some(creds) => {
-            if creds.is_expired() {
-                println!("Status: expired (run `neboai auth login` to re-authenticate)");
-            } else {
-                println!("Status: authenticated");
-            }
+        None => println!("Not signed in. Run `neboai auth login`."),
+        Some(creds) if creds.is_expired() => {
+            println!("Session expired. Run `neboai auth login`.")
         }
-        None => {
-            println!("Status: not authenticated (run `neboai auth login`)");
-        }
+        // Ask the server, so a revoked or deleted session isn't reported as signed in.
+        Some(_) => match crate::api::resolve_account(None).await {
+            Ok(account) => println!("Signed in to NeboAI. Publishing as @{}.", account.slug),
+            Err(e) => println!("Signed in locally, but NeboAI did not accept the session ({e}). Run `neboai auth login`."),
+        },
     }
     Ok(())
 }
@@ -155,28 +193,27 @@ pub async fn logout() -> Result<()> {
     let path = credentials_path();
     if path.exists() {
         std::fs::remove_file(&path)?;
-        println!("Logged out.");
+        println!("Signed out.");
     } else {
-        println!("Not currently authenticated.");
+        println!("Not signed in.");
     }
     Ok(())
 }
 
 pub async fn get_token() -> Result<String> {
-    let creds = load_credentials()?.context("Not authenticated. Run `neboai auth login` first.")?;
+    let creds = load_credentials()?.context("Not signed in. Run `neboai auth login` first.")?;
 
     if creds.is_expired() {
-        // TODO: implement refresh token flow
-        anyhow::bail!("Token expired. Run `neboai auth login` to re-authenticate.");
+        anyhow::bail!("Session expired. Run `neboai auth login`.");
     }
 
     Ok(creds.access_token)
 }
 
-fn generate_pkce_verifier() -> String {
+fn random_urlsafe(len: usize) -> String {
     use base64::Engine;
-    let mut bytes = [0u8; 32];
-    getrandom(&mut bytes);
+    let mut bytes = vec![0u8; len];
+    getrandom::getrandom(&mut bytes).expect("OS random number generator unavailable");
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
@@ -185,14 +222,6 @@ fn generate_pkce_challenge(verifier: &str) -> String {
     use sha2::{Digest, Sha256};
     let hash = Sha256::digest(verifier.as_bytes());
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash)
-}
-
-fn getrandom(buf: &mut [u8]) {
-    use std::fs::File;
-    use std::io::Read;
-    File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(buf))
-        .expect("Failed to read /dev/urandom");
 }
 
 mod urlencoding {

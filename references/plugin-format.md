@@ -35,7 +35,7 @@ my-plugin/
   "name": "My Plugin",
   "version": "1.0.0",
   "description": "What this plugin does",
-  "author": "NeboLoop",
+  "author": "Acme",
   "platforms": {
     "darwin-arm64": {
       "binaryName": "my-plugin",
@@ -241,10 +241,11 @@ neboai publish ./my-plugin
 
 The CLI will:
 1. Validate plugin.json and PLUGIN.md
-2. Create the skills tarball from `skills/`
-3. Upload first platform binary with config + skills
-4. Upload remaining platforms in parallel
-5. Submit for review
+2. Require at least one binary in `dist/plugin/<platform>/` (a plugin without a binary is refused)
+3. Create the plugin (or update it to the new version, before any upload)
+4. Create the skills tarball from `skills/`
+5. Upload the first platform binary with config + skills, then the remaining platforms
+6. Submit for review. Each binary is scanned in the background (static analysis); the plugin is listed once the scan passes.
 
 ## Environment Variable Naming
 

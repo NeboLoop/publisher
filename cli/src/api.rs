@@ -39,12 +39,27 @@ pub async fn list_artifacts() -> Result<()> {
         anyhow::bail!("Failed to list artifacts ({status}): {body}");
     }
 
-    let body = resp.text().await?;
-    // Pretty print
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
-        println!("{}", serde_json::to_string_pretty(&json)?);
-    } else {
-        println!("{body}");
+    let body: serde_json::Value = resp.json().await?;
+    let empty = vec![];
+    let products = body
+        .get("products")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
+    if products.is_empty() {
+        println!("Nothing published yet. Run `neboai publish <dir>`.");
+        return Ok(());
+    }
+    for p in products {
+        let app = p.get("app").unwrap_or(p);
+        let field = |k: &str| app.get(k).and_then(|v| v.as_str()).unwrap_or("");
+        println!(
+            "{:<10} {:<32} v{:<10} {:<10} {}",
+            field("type"),
+            field("name"),
+            field("version"),
+            status_label(field("status")),
+            field("id")
+        );
     }
 
     Ok(())
@@ -66,11 +81,23 @@ pub async fn get_status(id: &str) -> Result<()> {
         anyhow::bail!("Failed to get status ({status}): {body}");
     }
 
-    let body = resp.text().await?;
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
-        println!("{}", serde_json::to_string_pretty(&json)?);
-    } else {
-        println!("{body}");
+    let json: serde_json::Value = resp.json().await?;
+    let field = |k: &str| {
+        json.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    println!(
+        "{} ({}) v{}",
+        field("name"),
+        field("type"),
+        field("version")
+    );
+    println!("  Status:     {}", status_label(&field("status")));
+    println!("  Visibility: {}", field("visibility"));
+    if !field("code").is_empty() {
+        println!("  Install code: {}", field("code"));
     }
 
     Ok(())
@@ -109,7 +136,9 @@ pub async fn delete_binary(artifact_id: &str, binary_id: &str) -> Result<()> {
     let base = base_url();
 
     let resp = client
-        .delete(format!("{base}/developer/apps/{artifact_id}/binaries/{binary_id}"))
+        .delete(format!(
+            "{base}/developer/apps/{artifact_id}/binaries/{binary_id}"
+        ))
         .bearer_auth(&token)
         .send()
         .await?;
@@ -126,10 +155,21 @@ pub async fn delete_binary(artifact_id: &str, binary_id: &str) -> Result<()> {
 
 // --- Developer accounts ---
 
-/// Resolve the developer account id to publish under. If `slug` is given, picks
-/// the account with that slug; otherwise returns the first account. The account
-/// id is required by the create endpoint (publishing is namespace-scoped).
-pub async fn resolve_account(slug: Option<&str>) -> Result<String> {
+/// The publisher account (developer account) an item is published under.
+/// Every NeboAI account can publish: listing accounts sets up the free personal
+/// one on first use, so there is always at least one.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+    pub id: String,
+    pub slug: String,
+    #[serde(default)]
+    pub namespace_id: String,
+}
+
+/// Resolve the publisher account to publish under. `slug` picks a team account
+/// you belong to (set $NEBOAI_ACCOUNT); otherwise your first (personal) account.
+pub async fn resolve_account(slug: Option<&str>) -> Result<Account> {
     let (client, token) = authenticated_client().await?;
     let base = base_url();
 
@@ -142,37 +182,41 @@ pub async fn resolve_account(slug: Option<&str>) -> Result<String> {
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await?;
-        anyhow::bail!("Failed to list developer accounts ({status}): {body}");
+        anyhow::bail!(
+            "Failed to list publisher accounts ({status}): {}",
+            body.trim()
+        );
     }
 
-    #[derive(Deserialize)]
-    struct Account {
-        id: String,
-        slug: String,
-    }
     let val: serde_json::Value = resp.json().await?;
     let arr = val.get("accounts").cloned().unwrap_or(val);
     let accounts: Vec<Account> = serde_json::from_value(arr).unwrap_or_default();
 
-    if accounts.is_empty() {
-        anyhow::bail!("No developer accounts found. Create one at neboai.com first.");
-    }
     match slug {
         Some(s) => accounts
-            .iter()
+            .into_iter()
             .find(|a| a.slug == s)
-            .map(|a| a.id.clone())
-            .with_context(|| format!("No developer account with slug '{s}'")),
-        None => Ok(accounts[0].id.clone()),
+            .with_context(|| format!("You are not a member of a publisher account '@{s}'")),
+        None => accounts
+            .into_iter()
+            .next()
+            .context("NeboAI did not return a publisher account. Try again, or sign in again with `neboai auth login`."),
     }
 }
 
 // --- Create / Update / Submit ---
 
+/// An item you already published: its ID and current status
+/// (draft, pending_review, review, active, revoked).
+pub struct Existing {
+    pub id: String,
+    pub status: String,
+}
+
 /// Resolve an existing artifact's ID by slug/name + type. Publishing an
 /// artifact that already exists is a version update, not a create — the
 /// create endpoint rejects the slug+type unique constraint with a 400.
-pub async fn find_artifact(name: &str, artifact_type: &str) -> Result<Option<String>> {
+pub async fn find_artifact(name: &str, artifact_type: &str) -> Result<Option<Existing>> {
     let (client, token) = authenticated_client().await?;
     let base = base_url();
 
@@ -201,13 +245,18 @@ pub async fn find_artifact(name: &str, artifact_type: &str) -> Result<Option<Str
         let ty = app.get("type").and_then(|v| v.as_str());
         if ty == Some(artifact_type) && (slug == Some(name) || app_name == Some(name)) {
             if let Some(id) = app.get("id").and_then(|v| v.as_str()) {
-                return Ok(Some(id.to_string()));
+                let status = app.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                return Ok(Some(Existing {
+                    id: id.to_string(),
+                    status: status.to_string(),
+                }));
             }
         }
     }
     Ok(None)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create_artifact(
     account_id: &str,
     name: &str,
@@ -254,21 +303,24 @@ pub async fn create_artifact(
     Ok(created.id)
 }
 
-#[allow(dead_code)]
 /// Update an existing artifact's manifest and (when provided) its version.
 /// The version MUST be updated before uploading a new version's binaries:
 /// the binaries endpoint records uploads under the artifact row's CURRENT
 /// version, so uploading first mislabels the new bytes as the old version.
-pub async fn update_manifest(id: &str, manifest_content: &str, version: Option<&str>) -> Result<()> {
+pub async fn update_manifest(
+    id: &str,
+    manifest_content: &str,
+    version: &str,
+    description: &str,
+) -> Result<()> {
     let (client, token) = authenticated_client().await?;
     let base = base_url();
 
-    let mut body = serde_json::json!({
+    let body = serde_json::json!({
         "manifestContent": manifest_content,
+        "version": version,
+        "description": description,
     });
-    if let Some(v) = version {
-        body["version"] = serde_json::json!(v);
-    }
 
     let resp = client
         .put(format!("{base}/developer/apps/{id}"))
@@ -288,6 +340,7 @@ pub async fn update_manifest(id: &str, manifest_content: &str, version: Option<&
 
 /// Create a collection (a bundle of existing artifacts). Returns its ID.
 pub async fn create_collection(
+    namespace_id: &str,
     name: &str,
     description: &str,
     visibility: &str,
@@ -296,6 +349,7 @@ pub async fn create_collection(
     let base = base_url();
 
     let body = serde_json::json!({
+        "namespaceId": namespace_id,
         "name": name,
         "description": description,
         "visibility": visibility,
@@ -365,7 +419,10 @@ pub async fn update_listing(id: &str, name: &str, long_description: Option<&str>
         body.insert("name".into(), serde_json::Value::String(name.to_string()));
     }
     if let Some(ld) = long_description {
-        body.insert("longDescription".into(), serde_json::Value::String(ld.to_string()));
+        body.insert(
+            "longDescription".into(),
+            serde_json::Value::String(ld.to_string()),
+        );
     }
     if body.is_empty() {
         return Ok(());
@@ -387,6 +444,9 @@ pub async fn update_listing(id: &str, name: &str, long_description: Option<&str>
     Ok(())
 }
 
+/// Submit the item's current version for review and report the outcome.
+/// Text-only items get a content scan and are approved at once when clean;
+/// items with binaries are scanned in the background.
 pub async fn submit(id: &str, version: &str) -> Result<()> {
     let (client, token) = authenticated_client().await?;
     let base = base_url();
@@ -408,8 +468,34 @@ pub async fn submit(id: &str, version: &str) -> Result<()> {
         anyhow::bail!("Failed to submit ({status}): {body}");
     }
 
-    println!("Submitted for review.");
+    let val: serde_json::Value = resp.json().await.unwrap_or_default();
+    let outcome = val
+        .pointer("/submission/status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    println!("  {}", submit_outcome(outcome));
     Ok(())
+}
+
+/// Plain words for a submission status.
+pub fn submit_outcome(status: &str) -> &'static str {
+    match status {
+        "approved" | "auto_approved" => "Review: approved. It is published.",
+        "flagged" | "manual_review" => {
+            "Review: the automated scan flagged it, so a person on the NeboAI team will review it. Check with `neboai status <id>`."
+        }
+        _ => "Review: in progress (binaries are scanned in the background). Check with `neboai status <id>`.",
+    }
+}
+
+/// Plain words for an item status.
+pub fn status_label(status: &str) -> &'static str {
+    match status {
+        "active" => "Published",
+        "pending_review" | "review" => "In review",
+        "revoked" => "Removed",
+        _ => "Draft",
+    }
 }
 
 // --- Binary Upload ---
@@ -421,6 +507,7 @@ pub async fn upload_binary(
     manifest_path: &std::path::Path,
     config_path: Option<&std::path::Path>,
     skills_tarball: Option<&std::path::Path>,
+    ui_tarball: Option<&std::path::Path>,
 ) -> Result<()> {
     let upload_token = auth::get_token().await?;
     let base = base_url();
@@ -471,6 +558,16 @@ pub async fn upload_binary(
         form = form.part(
             "skills",
             reqwest::multipart::Part::bytes(tar_bytes).file_name("skills.tar.gz"),
+        );
+    }
+
+    // App UI bundle (tar.gz of ui/), packed under ui/ in the installable package
+    if let Some(ui_path) = ui_tarball {
+        let ui_bytes = std::fs::read(ui_path)
+            .with_context(|| format!("Failed to read UI bundle {}", ui_path.display()))?;
+        form = form.part(
+            "ui",
+            reqwest::multipart::Part::bytes(ui_bytes).file_name("ui.tar.gz"),
         );
     }
 
@@ -541,7 +638,10 @@ fn zip_dir(dir: &std::path::Path) -> Result<(Vec<u8>, usize)> {
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     let mut count = 0usize;
-    for entry in walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+    for entry in walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let path = entry.path();
         if !path.is_file() {
             continue;
@@ -557,16 +657,17 @@ fn zip_dir(dir: &std::path::Path) -> Result<(Vec<u8>, usize)> {
         // files, Formula, …) that must never ship — an unfiltered walk blows
         // the upload size cap and leaks non-runtime files.
         let top = rel_str.split('/').next().unwrap_or("");
-        let allowed = rel_str == "SKILL.md"
-            || top == "references"
-            || top == "scripts"
-            || top == "assets";
-        let base = rel.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let allowed =
+            rel_str == "SKILL.md" || top == "references" || top == "scripts" || top == "assets";
+        let base = rel
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         if !allowed || rel_str.split('/').any(|c| c == ".git") || base == ".DS_Store" {
             continue;
         }
-        let bytes = std::fs::read(path)
-            .with_context(|| format!("Failed to read {}", path.display()))?;
+        let bytes =
+            std::fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
         zip.start_file(rel_str, opts)?;
         zip.write_all(&bytes)?;
         count += 1;

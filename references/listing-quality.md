@@ -85,9 +85,9 @@ Tag your solution with the shelf a user would browse to find it — the problem 
 
 ## Two gates
 
-Every submission passes two checks:
+Every public version passes an automatic check, and some also get a person:
 
-1. **Automatic** — structural rules that fail fast (see `review-rubric.md` → Mechanical gate). A missing description, a snake_case label, or a template variable in a label is rejected before review.
-2. **Human review** — judgment a machine cannot make: is the description actually benefit-first, does the option set fit real users, is the name confusable. A reviewer approves or sends it back with a reason.
+1. **Automatic** — structural rules fail fast when you publish (a description of 10–500 characters, valid manifests; `neboai validate` checks the rest locally), then an automated scan runs. Text-only items with a clean scan are approved and listed at once; binaries are scanned before they ship.
+2. **Human review** — when the scan flags something, a person on the NeboAI team looks at it. The NeboAI team can also send a listing back later if it misleads users. The judgment in `review-rubric.md` is what they apply — is the description benefit-first, does the option set fit real users, is the name confusable — so check your listing against it before you submit.
 
 Clearing both is not a hurdle. It is what makes this a marketplace a user trusts — which is what makes your listing worth installing in the first place.
