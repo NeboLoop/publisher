@@ -82,8 +82,18 @@ pub async fn get_status(id: &str) -> Result<()> {
     }
 
     let json: serde_json::Value = resp.json().await?;
-    let field = |k: &str| json.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
-    println!("{} ({}) v{}", field("name"), field("type"), field("version"));
+    let field = |k: &str| {
+        json.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    println!(
+        "{} ({}) v{}",
+        field("name"),
+        field("type"),
+        field("version")
+    );
     println!("  Status:     {}", status_label(&field("status")));
     println!("  Visibility: {}", field("visibility"));
     if !field("code").is_empty() {
@@ -126,7 +136,9 @@ pub async fn delete_binary(artifact_id: &str, binary_id: &str) -> Result<()> {
     let base = base_url();
 
     let resp = client
-        .delete(format!("{base}/developer/apps/{artifact_id}/binaries/{binary_id}"))
+        .delete(format!(
+            "{base}/developer/apps/{artifact_id}/binaries/{binary_id}"
+        ))
         .bearer_auth(&token)
         .send()
         .await?;
@@ -170,7 +182,10 @@ pub async fn resolve_account(slug: Option<&str>) -> Result<Account> {
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await?;
-        anyhow::bail!("Failed to list publisher accounts ({status}): {}", body.trim());
+        anyhow::bail!(
+            "Failed to list publisher accounts ({status}): {}",
+            body.trim()
+        );
     }
 
     let val: serde_json::Value = resp.json().await?;
@@ -404,7 +419,10 @@ pub async fn update_listing(id: &str, name: &str, long_description: Option<&str>
         body.insert("name".into(), serde_json::Value::String(name.to_string()));
     }
     if let Some(ld) = long_description {
-        body.insert("longDescription".into(), serde_json::Value::String(ld.to_string()));
+        body.insert(
+            "longDescription".into(),
+            serde_json::Value::String(ld.to_string()),
+        );
     }
     if body.is_empty() {
         return Ok(());
@@ -620,7 +638,10 @@ fn zip_dir(dir: &std::path::Path) -> Result<(Vec<u8>, usize)> {
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     let mut count = 0usize;
-    for entry in walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+    for entry in walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let path = entry.path();
         if !path.is_file() {
             continue;
@@ -636,16 +657,17 @@ fn zip_dir(dir: &std::path::Path) -> Result<(Vec<u8>, usize)> {
         // files, Formula, …) that must never ship — an unfiltered walk blows
         // the upload size cap and leaks non-runtime files.
         let top = rel_str.split('/').next().unwrap_or("");
-        let allowed = rel_str == "SKILL.md"
-            || top == "references"
-            || top == "scripts"
-            || top == "assets";
-        let base = rel.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let allowed =
+            rel_str == "SKILL.md" || top == "references" || top == "scripts" || top == "assets";
+        let base = rel
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         if !allowed || rel_str.split('/').any(|c| c == ".git") || base == ".DS_Store" {
             continue;
         }
-        let bytes = std::fs::read(path)
-            .with_context(|| format!("Failed to read {}", path.display()))?;
+        let bytes =
+            std::fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
         zip.start_file(rel_str, opts)?;
         zip.write_all(&bytes)?;
         count += 1;

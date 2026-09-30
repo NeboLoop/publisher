@@ -119,7 +119,10 @@ async fn main() -> anyhow::Result<()> {
             BinariesAction::List { id } => {
                 api::list_binaries(&id).await?;
             }
-            BinariesAction::Delete { artifact_id, binary_id } => {
+            BinariesAction::Delete {
+                artifact_id,
+                binary_id,
+            } => {
                 api::delete_binary(&artifact_id, &binary_id).await?;
             }
         },

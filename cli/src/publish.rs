@@ -113,7 +113,14 @@ async fn upsert(
         None => {
             println!("Creating {artifact_type}: {name}");
             let id = api::create_artifact(
-                account_id, name, artifact_type, category, description, version, visibility, manifest,
+                account_id,
+                name,
+                artifact_type,
+                category,
+                description,
+                version,
+                visibility,
+                manifest,
             )
             .await?;
             println!("  Artifact ID: {id}");
@@ -136,14 +143,22 @@ async fn publish_collection(dir: &Path, account: &api::Account, visibility: &str
         .and_then(|v| v.as_str())
         .context("collection.json must have a 'name'")?
         .to_string();
-    let description = cap_description(json.get("description").and_then(|v| v.as_str()).unwrap_or(""));
+    let description = cap_description(
+        json.get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
+    );
     let version = json
         .get("version")
         .and_then(|v| v.as_str())
         .unwrap_or("1.0.0")
         .to_string();
     let title = json.get("title").and_then(|v| v.as_str());
-    let items = json.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let items = json
+        .get("items")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     if api::find_artifact(&name, "collection").await?.is_some() {
         bail!("You already have a collection named '{name}'. Change its items on neboai.com or through the NeboAI MCP.");
@@ -219,14 +234,37 @@ async fn publish_connector(dir: &Path, account_id: &str, visibility: &str) -> Re
         .and_then(|v| v.as_str())
         .unwrap_or("1.0.0")
         .to_string();
-    let category = category_display_name(json.get("category").and_then(|v| v.as_str()).unwrap_or(""));
-    let description = cap_description(json.get("description").and_then(|v| v.as_str()).unwrap_or(""));
+    let category =
+        category_display_name(json.get("category").and_then(|v| v.as_str()).unwrap_or(""));
+    let description = cap_description(
+        json.get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
+    );
     let title = json.get("title").and_then(|v| v.as_str());
 
-    let item = upsert(account_id, &name, "connector", category, &description, &version, visibility, &raw).await?;
+    let item = upsert(
+        account_id,
+        &name,
+        "connector",
+        category,
+        &description,
+        &version,
+        visibility,
+        &raw,
+    )
+    .await?;
 
     apply_listing(dir, &item.id, &name, title).await?;
-    finalize(&item.id, &name, "Connector", &version, visibility, item.previous_status.as_deref()).await?;
+    finalize(
+        &item.id,
+        &name,
+        "Connector",
+        &version,
+        visibility,
+        item.previous_status.as_deref(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -238,7 +276,17 @@ async fn publish_skill(dir: &Path, account_id: &str, visibility: &str) -> Result
     let category = category_display_name(fm.category.as_deref().unwrap_or(""));
     let description = cap_description(&fm.description);
 
-    let item = upsert(account_id, &name, "skill", category, &description, &version, visibility, &skill_md).await?;
+    let item = upsert(
+        account_id,
+        &name,
+        "skill",
+        category,
+        &description,
+        &version,
+        visibility,
+        &skill_md,
+    )
+    .await?;
 
     // Upload the whole directory as a bundle so references/, scripts/, and
     // assets/ ship alongside SKILL.md. The server re-extracts SKILL.md into the
@@ -250,7 +298,15 @@ async fn publish_skill(dir: &Path, account_id: &str, visibility: &str) -> Result
     // frontmatter name is the lowercase runtime id) and the "What it does" long
     // description from LISTING.md, if present.
     apply_listing(dir, &item.id, &name, fm.title.as_deref()).await?;
-    finalize(&item.id, &name, "Skill", &version, visibility, item.previous_status.as_deref()).await?;
+    finalize(
+        &item.id,
+        &name,
+        "Skill",
+        &version,
+        visibility,
+        item.previous_status.as_deref(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -272,7 +328,10 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
         .unwrap_or("1.0.0")
         .to_string();
     let category = category_display_name(
-        plugin_json.get("category").and_then(|v| v.as_str()).unwrap_or(""),
+        plugin_json
+            .get("category")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
     );
     // Description from PLUGIN.md frontmatter (falls back to plugin.json), capped at 500 chars.
     let fm = extract_frontmatter_fields(&plugin_md).ok();
@@ -280,7 +339,12 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
         .as_ref()
         .map(|f| f.description.clone())
         .filter(|d| !d.is_empty())
-        .or_else(|| plugin_json.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .or_else(|| {
+            plugin_json
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .unwrap_or_else(|| format!("{name} — NeboAI plugin"));
     let description = cap_description(&description);
 
@@ -290,7 +354,17 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
         bail!("No platform binaries found in dist/plugin/. Run ./build.sh first. Expected at least one of: {PLATFORMS:?}");
     }
 
-    let item = upsert(account_id, &name, "plugin", category, &description, &version, visibility, &plugin_md).await?;
+    let item = upsert(
+        account_id,
+        &name,
+        "plugin",
+        category,
+        &description,
+        &version,
+        visibility,
+        &plugin_md,
+    )
+    .await?;
 
     // Build skills tarball if skills/ exists
     let skills_tarball = if dir.join("skills").exists() {
@@ -317,7 +391,11 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
             Some(&binary_path),
             &dir.join("PLUGIN.md"),
             if first { Some(&plugin_json_path) } else { None },
-            if first { skills_tarball.as_deref() } else { None },
+            if first {
+                skills_tarball.as_deref()
+            } else {
+                None
+            },
             None,
         )
         .await?;
@@ -325,7 +403,15 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
     }
 
     apply_listing(dir, &item.id, &name, None).await?;
-    finalize(&item.id, &name, "Plugin", &version, visibility, item.previous_status.as_deref()).await?;
+    finalize(
+        &item.id,
+        &name,
+        "Plugin",
+        &version,
+        visibility,
+        item.previous_status.as_deref(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -338,7 +424,17 @@ async fn publish_agent(dir: &Path, account_id: &str, visibility: &str) -> Result
     let category = category_display_name(fm.category.as_deref().unwrap_or(""));
     let description = cap_description(&fm.description);
 
-    let item = upsert(account_id, &name, "agent", category, &description, &version, visibility, &agent_md).await?;
+    let item = upsert(
+        account_id,
+        &name,
+        "agent",
+        category,
+        &description,
+        &version,
+        visibility,
+        &agent_md,
+    )
+    .await?;
 
     // agent.json is stored as the employee's config; employees have no binary.
     api::upload_binary(
@@ -353,7 +449,15 @@ async fn publish_agent(dir: &Path, account_id: &str, visibility: &str) -> Result
     .await?;
 
     apply_listing(dir, &item.id, &name, fm.title.as_deref()).await?;
-    finalize(&item.id, &name, "Agent", &version, visibility, item.previous_status.as_deref()).await?;
+    finalize(
+        &item.id,
+        &name,
+        "Agent",
+        &version,
+        visibility,
+        item.previous_status.as_deref(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -377,11 +481,19 @@ async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<(
         .as_ref()
         .map(|f| f.description.clone())
         .filter(|d| !d.is_empty())
-        .or_else(|| manifest.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .or_else(|| {
+            manifest
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .unwrap_or_else(|| format!("{name} — NeboAI app"));
     let description = cap_description(&description);
     let category = category_display_name(
-        manifest.get("category").and_then(|v| v.as_str()).unwrap_or(""),
+        manifest
+            .get("category")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
     );
 
     // An app installs from its sidecar binaries (the UI rides along with
@@ -393,7 +505,17 @@ async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<(
         );
     }
 
-    let item = upsert(account_id, &name, "app", category, &description, &version, visibility, &agent_md).await?;
+    let item = upsert(
+        account_id,
+        &name,
+        "app",
+        category,
+        &description,
+        &version,
+        visibility,
+        &agent_md,
+    )
+    .await?;
 
     let ui_tarball = std::env::temp_dir().join(format!("neboai-{}-ui.tar.gz", item.id));
     build_tarball(&dir.join("ui"), "ui", &ui_tarball)?;
@@ -409,13 +531,31 @@ async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<(
             &dir.join("AGENT.md"),
             if i == 0 { config_path.as_deref() } else { None },
             None,
-            if i == 0 { Some(ui_tarball.as_path()) } else { None },
+            if i == 0 {
+                Some(ui_tarball.as_path())
+            } else {
+                None
+            },
         )
         .await?;
     }
 
-    apply_listing(dir, &item.id, &name, fm.as_ref().and_then(|f| f.title.as_deref())).await?;
-    finalize(&item.id, &name, "App", &version, visibility, item.previous_status.as_deref()).await?;
+    apply_listing(
+        dir,
+        &item.id,
+        &name,
+        fm.as_ref().and_then(|f| f.title.as_deref()),
+    )
+    .await?;
+    finalize(
+        &item.id,
+        &name,
+        "App",
+        &version,
+        visibility,
+        item.previous_status.as_deref(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -738,14 +878,20 @@ mod tests {
 
     #[test]
     fn display_name_prefers_explicit_title() {
-        assert_eq!(clean_display_name("nebo-design", Some("Nebo Design Studio")), "Nebo Design Studio");
+        assert_eq!(
+            clean_display_name("nebo-design", Some("Nebo Design Studio")),
+            "Nebo Design Studio"
+        );
         // Blank title falls back to derivation.
         assert_eq!(clean_display_name("nebo-design", Some("  ")), "Nebo Design");
     }
 
     #[test]
     fn strip_frontmatter_drops_yaml_block() {
-        assert_eq!(strip_frontmatter("---\ntitle: X\n---\nBody here").trim(), "Body here");
+        assert_eq!(
+            strip_frontmatter("---\ntitle: X\n---\nBody here").trim(),
+            "Body here"
+        );
         assert_eq!(strip_frontmatter("No frontmatter").trim(), "No frontmatter");
     }
 

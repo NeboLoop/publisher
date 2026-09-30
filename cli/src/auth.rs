@@ -98,18 +98,34 @@ pub async fn login() -> Result<()> {
                 .map(|(_, v)| v.to_string())
         };
         let (page, result) = if let Some(err) = param("error") {
-            ("Sign-in was cancelled. You can close this tab.", Err(anyhow::anyhow!("Sign-in failed: {err}")))
+            (
+                "Sign-in was cancelled. You can close this tab.",
+                Err(anyhow::anyhow!("Sign-in failed: {err}")),
+            )
         } else if param("state").as_deref() != Some(state.as_str()) {
-            ("Sign-in could not be verified. You can close this tab.", Err(anyhow::anyhow!("Sign-in failed: the callback did not match this request")))
+            (
+                "Sign-in could not be verified. You can close this tab.",
+                Err(anyhow::anyhow!(
+                    "Sign-in failed: the callback did not match this request"
+                )),
+            )
         } else if let Some(code) = param("code") {
             ("Signed in to NeboAI. You can close this tab.", Ok(code))
         } else {
-            ("Sign-in failed. You can close this tab.", Err(anyhow::anyhow!("Sign-in failed: no authorization code received")))
+            (
+                "Sign-in failed. You can close this tab.",
+                Err(anyhow::anyhow!(
+                    "Sign-in failed: no authorization code received"
+                )),
+            )
         };
-        let response = tiny_http::Response::from_string(format!(
-            "<html><body><h1>{page}</h1></body></html>"
-        ))
-        .with_header("Content-Type: text/html".parse::<tiny_http::Header>().unwrap());
+        let response =
+            tiny_http::Response::from_string(format!("<html><body><h1>{page}</h1></body></html>"))
+                .with_header(
+                    "Content-Type: text/html"
+                        .parse::<tiny_http::Header>()
+                        .unwrap(),
+                );
         request.respond(response).ok();
         break result?;
     };
