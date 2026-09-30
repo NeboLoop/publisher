@@ -39,23 +39,29 @@ jobs:
     strategy:
       matrix:
         include:
+          # House runners, the same ones NeboLoop/nebo releases on. Only this
+          # tag-triggered workflow uses them; pull requests (ci.yml) stay on
+          # GitHub-hosted runners, so no outside code reaches our machines.
           - target: aarch64-apple-darwin
-            os: macos-latest
+            runner: '["self-hosted","macOS","stadium-mac"]'
             platform: darwin-arm64
           - target: x86_64-apple-darwin
-            os: macos-latest
+            runner: '["self-hosted","macOS","stadium-mac"]'
             platform: darwin-amd64
           - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
+            runner: '["self-hosted","Linux","ARM64","neboloop"]'
             platform: linux-arm64
+          # ponytail: GitHub-hosted for linux-amd64 (free on a public repo, a
+          # two-minute build); nebo's per-run droplet if this ever outgrows it.
           - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
+            runner: '"ubuntu-latest"'
             platform: linux-amd64
           - target: x86_64-pc-windows-msvc
-            os: windows-latest
+            runner: '["self-hosted","Windows","X64","stadium-win"]'
             platform: windows-amd64
+            windows: true
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJSON(matrix.runner) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -68,12 +74,10 @@ jobs:
       - name: Install musl tools (Linux)
         if: contains(matrix.target, 'musl')
         run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-            echo "CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          # Native builds on both Linux runners: musl-gcc for the host arch.
+          if ! command -v musl-gcc >/dev/null; then
+            sudo -n apt-get update && sudo -n apt-get install -y musl-tools \
+              || { echo "::error::musl-tools is missing on this runner and sudo needs a password. Install it once: sudo apt-get install -y musl-tools"; exit 1; }
           fi
 
       - name: Build
@@ -81,20 +85,15 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Strip binary (Unix)
-        if: matrix.os != 'windows-latest'
-        run: |
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
-            aarch64-linux-gnu-strip cli/target/${{ matrix.target }}/release/neboai
-          else
-            strip cli/target/${{ matrix.target }}/release/neboai
-          fi
+        if: ${{ !matrix.windows }}
+        run: strip cli/target/${{ matrix.target }}/release/neboai
 
       - name: Rename binary (Unix)
-        if: matrix.os != 'windows-latest'
+        if: ${{ !matrix.windows }}
         run: cp cli/target/${{ matrix.target }}/release/neboai neboai-${{ matrix.platform }}
 
       - name: Rename binary (Windows)
-        if: matrix.os == 'windows-latest'
+        if: ${{ matrix.windows }}
         run: cp cli/target/${{ matrix.target }}/release/neboai.exe neboai-${{ matrix.platform }}.exe
 
       - name: Upload artifact
