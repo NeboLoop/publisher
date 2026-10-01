@@ -202,8 +202,7 @@ const answer = await nebo.janus.complete({
     { role: 'system', content: 'You are a financial analyst.' },
     { role: 'user', content: 'Summarize this data...' }
   ],
-  model: 'claude-sonnet-4-6',  // Optional
-  max_tokens: 1024              // Optional
+  max_tokens: 1024  // Optional
 });
 
 // Streaming
@@ -213,6 +212,42 @@ for await (const text of nebo.janus.stream({
   output.textContent += text;
 }
 ```
+
+#### `nebo.decide`
+
+Typed decisions: named questions about some data, each answered with probabilities and a confidence in one fast call. Nothing is written as text, so use it for judgments (is this lead hot, which category, how urgent) and keep counting, dates and thresholds in your own code.
+
+```typescript
+const { answers } = await nebo.decide({
+  state: { company: 'Example Co', status: 'asked for a quote today' },
+  questions: {
+    tier: {
+      type: 'choice',
+      instructions: 'How warm is this lead, judging by `status`?',
+      criteria: { hot: 'ready to buy', warm: 'interested', cold: 'not now', other: "can't tell" }
+    },
+    fit: {
+      type: 'score',
+      instructions: 'How well does `company` fit our customers?',
+      criteria: ['poor', 'fair', 'good', 'great']
+    },
+    reply: { type: 'noul', instructions: '`status` asks us for a reply.' }
+  }
+});
+
+if (answers.tier.choice === 'hot' && answers.tier.confidence > 0.8) flagLead();
+```
+
+| Type | `criteria` | Answer fields |
+|------|------------|---------------|
+| `choice` | `{option: description}`, 2 to 255 options. Add an escape option (`other`) when the list is not complete | `choice`, `confidence` (0 to 1), `probabilities` per option |
+| `score` | `[levels]`, 2 to 10, lowest first | `score` (fractional: 0 is the first level, 1.5 is between the second and third), `confidence`, `probabilities` |
+| `noul` | none: the question is one statement | `noul`, the probability the statement holds (no separate `confidence`) |
+
+- Resolves to `{ model, answers, usage }`; each answer comes back under its question's name.
+- `state` is text or any JSON. Keep it to the fields the questions need and name them in backticks inside `instructions`. The whole question lives in `instructions`; the name only labels the answer. Very long state is shortened in the middle before it is sent.
+- Throws with the reason when a question is malformed (a choice with one option, a `noul` with criteria, a missing `instructions`), when the bot is not signed in to NeboAI, or when the decision cannot be made.
+- Billed to the bot owner's NeboAI account like any model call. See pricing at https://neboai.com/pricing.
 
 #### `nebo.chat`
 
@@ -385,6 +420,8 @@ Your page's own writes are reported too, so the handler above also covers a seco
 | One key per setting | `settings` = `{ theme, sound }` | Preferences and saves |
 
 Tell the employee about your keys in its instructions (AGENT.md), for example: "Contacts are a list under the key `contacts`, each `{ name, phone: { mobile, work }, email }`."
+
+**Judging the data.** The app's employee also has a `decide` tool that takes the same request as `nebo.decide`, so it can read records with its data tool and then ask typed questions about them ("which of these leads are hot?") without writing prose. The page can do the same with `nebo.decide`.
 
 **Things to know.**
 - A string that is itself valid JSON, such as `"42"` or `"true"`, comes back parsed (`42`, `true`). Store it inside an object (`{ "code": "42" }`) if the type matters.

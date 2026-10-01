@@ -736,6 +736,10 @@ for await (const chunk of nebo.agents.stream('prompt')) { ... }
 const answer = await nebo.janus.complete({ messages: [...] });
 for await (const text of nebo.janus.stream({ messages: [...] })) { ... }
 
+// Decide: typed judgments with probabilities (choice / score / noul), no text generated
+const { answers } = await nebo.decide({ state: record, questions: {
+  hot: { type: 'noul', instructions: '`status` shows they are ready to buy.' } } });
+
 // Chat — embedded UI panel
 nebo.chat.mount(el, { placeholder: '...', theme: 'dark', contextId: id, scope: 'read' });
 nebo.chat.send('message');
