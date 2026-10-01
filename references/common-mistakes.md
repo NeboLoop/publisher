@@ -55,6 +55,10 @@
 | Page uses a bare `nebo` global or `import ... from '@neboai/app-sdk'` without a bundler | `ReferenceError` / module not found | Load `/sdk/nebo.global.js` and read `window.NeboAppSDK.nebo` |
 | Category "productivity" (or any non-marketplace name) | MCP create refuses: unknown category | Use a marketplace name (`marketplace(action: list_categories)`) or leave it out |
 | A page file over 10 MB, or `ui/` over 50 MB | File skipped / bundle refused | Shorten, compress or downscale the asset |
+| A page file with an extension Nebo does not know (or none) | Video or model never loads: served as `application/octet-stream` under `nosniff` | Use a listed type (`mp4 webm mov m4v`, `glb gltf`, `woff2`...) with its real extension |
+| `ui/boards/`, `src/` or `node_modules/` left inside `ui/` | Working files ship, or the bundle passes 50 MB | Keep only what the page loads in `ui/`; build into it |
+| A tilt game without `device:motion` in manifest permissions | `devicemotion` never fires (sensors blocked by Permissions-Policy) | Add `device:motion`; on iPhone also call `DeviceMotionEvent.requestPermission()` from a tap |
+| Expecting a bundle upload to update installed copies of a **public** app | Installed bots stay on the reviewed version | Submit the new version; public updates reach bots after review. Private, unlisted and loop apps update on upload |
 | Sidecar doesn't read `$NEBO_APP_SOCK` | Connection timeout | Read env var and bind socket there |
 | Sidecar startup > 10s | Launch fails | Optimize startup or increase via `manifest.startup_timeout` (max 120s) |
 | manifest.json uses `artifact_type` | Deserialization may fail | Use `type` (serde renames it) |

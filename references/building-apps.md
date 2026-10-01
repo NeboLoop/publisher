@@ -90,6 +90,16 @@ Content-hashed names (`main-0a8ksftt.js`) are cached for a year; every other fil
 
 A page may carry images, fonts, video (`mp4 webm mov`), sound (`mp3 wav ogg m4a`), `wasm` and 3D models (`glb gltf`); video and sound answer range requests, so seeking works. Limits: 10 MB per file, 50 MB in total.
 
+The full list of types, the caching rule and how range requests are answered are in [app-format.md](app-format.md#the-page-ui).
+
+### Games, films and the phone
+
+- **Full screen.** `"window": { "fullscreen": true, "orientation": "landscape" }` opens the app over the whole screen: a full-screen window on desktop; on the phone no app bar, system bars hidden, the screen kept awake, no pull-to-refresh, the edge swipe back turned off, and a small Close pill in the top-left corner that fades after a few seconds. Keep your own controls clear of that corner and pad with `env(safe-area-inset-*)` and `viewport-fit=cover`. `orientation` is `portrait` (default), `landscape` or `any`; any other value is refused when the manifest is written.
+- **Tilt.** Add `device:motion` to `permissions`, then read `devicemotion` / `deviceorientation`. On iPhone, call `DeviceMotionEvent.requestPermission()` from a tap first.
+- **Video.** `<video muted playsinline>` plays in place on the phone (add `autoplay loop` for a loop). For a film that scrubs with the scroll, encode every frame as a keyframe (`ffmpeg ... -g 1 -keyint_min 1 -sc_threshold 0 -movflags +faststart -an`), call `load()` and prime it with one muted `play()` then `pause()` before the first seek, and start a new seek only after the previous `seeked` event, always toward the newest target.
+- **Scrolling pages.** `html, body { touch-action: pan-y; overscroll-behavior-x: none; }` so nothing pans sideways; a game's play area uses `touch-action: none`.
+- **Sound.** Browsers start audio only after a first tap. Ask for sound and tilt on the same first tap.
+
 ### Complete SDK API
 
 #### `nebo.configure(options)`
@@ -575,6 +585,8 @@ skills/
 - [ ] State survives closing and reopening the window (`nebo.storage`)
 - [ ] AGENT.md frontmatter has `artifact_type: app`, and every value containing `: ` is quoted
 - [ ] Every file in `ui/` is at most 10 MB and the whole `ui/` at most 50 MB
+- [ ] Video plays and seeks on a phone (`muted playsinline`), and nothing pans sideways
+- [ ] A full-screen app keeps its controls clear of the top-left Close pill
 - [ ] `nebo.fetch('/...')` reaches sidecar and returns data (sidecar apps)
 - [ ] Sidecar starts within 10 seconds
 - [ ] Sidecar handles SIGTERM gracefully
