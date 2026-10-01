@@ -722,10 +722,11 @@ Load the SDK Nebo serves and read its one global (there is no bare `nebo` global
 const deals = await nebo.fetch('/deals').then(r => r.json());
 const ext = await nebo.fetch('https://api.example.com/data').then(r => r.json());
 
-// Storage — persistent async KV
+// Storage — persistent async KV, shared with the app's employee
 await nebo.storage.setItem('key', value);
-const val = await nebo.storage.getItem('key');
+const val = await nebo.storage.getItem('key');   // exactly what setItem stored
 await nebo.storage.removeItem('key');
+nebo.storage.onChange(({ keys, source }) => render()); // employee or page changed it
 
 // Agents — invoke or stream
 const { text, tools } = await nebo.agents.invoke('prompt');
@@ -741,13 +742,10 @@ nebo.chat.send('message');
 nebo.chat.onMessage((msg) => { ... });
 nebo.chat.unmount();
 
-// Surfaces — real-time agent→app events
+// Surfaces — the live channel that carries A2UI cards from the employee
+// (pair with nebo.a2ui.init(processor)). Typed events such as state_snapshot
+// are not sent to app pages yet: use storage.onChange for live data.
 nebo.surfaces.connect();
-nebo.surfaces.on('state_snapshot', (e) => { appState = e.snapshot; render(); });
-nebo.surfaces.on('state_delta', (e) => { render(); });
-nebo.surfaces.on('run_started', (e) => showSpinner());
-nebo.surfaces.on('run_finished', (e) => hideSpinner());
-nebo.surfaces.send('action_name', { key: 'value' });
 
 // WebSocket — auto-reconnecting, to the app's agent (no arguments)
 const ws = new nebo.WebSocket();
