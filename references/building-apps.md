@@ -99,6 +99,7 @@ The full list of types, the caching rule and how range requests are answered are
 - **Video.** `<video muted playsinline>` plays in place on the phone (add `autoplay loop` for a loop). For a film that scrubs with the scroll, encode every frame as a keyframe (`ffmpeg ... -g 1 -keyint_min 1 -sc_threshold 0 -movflags +faststart -an`), call `load()` and prime it with one muted `play()` then `pause()` before the first seek, and start a new seek only after the previous `seeked` event, always toward the newest target.
 - **Scrolling pages.** `html, body { touch-action: pan-y; overscroll-behavior-x: none; }` so nothing pans sideways; a game's play area uses `touch-action: none`.
 - **Sound.** Browsers start audio only after a first tap. Ask for sound and tilt on the same first tap.
+- **Voice.** Every app opened in the Nebo desktop app or on the phone shows a small voice control in its bottom-right corner, so the owner can talk to the app's employee while it works on the page. The control sits outside your page, so reloading the page never drops the call. On desktop it is a bar about 300 by 48 pixels, 16 pixels in from the window's bottom-right corner. On the phone it is a round 48-point button inside the safe area that the owner can drag to either side; in a full-screen app it folds back to that button a few seconds into a call. Keep important controls clear of the bottom-right corner. During a long task on a call, the employee says short updates such as "Now editing." and never reads out file names or commands.
 
 ### Complete SDK API
 
