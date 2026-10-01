@@ -246,7 +246,12 @@ if (answers.tier.choice === 'hot' && answers.tier.confidence > 0.8) flagLead();
 
 - Resolves to `{ model, answers, usage }`; each answer comes back under its question's name.
 - `state` is text or any JSON. Keep it to the fields the questions need and name them in backticks inside `instructions`. The whole question lives in `instructions`; the name only labels the answer. Very long state is shortened in the middle before it is sent.
-- Throws with the reason when a question is malformed (a choice with one option, a `noul` with criteria, a missing `instructions`), when the bot is not signed in to NeboAI, or when the decision cannot be made.
+- Throws an `Error` whose message is the reason (the error has no status code, only the message). The bot's route answers:
+  - 400 for a malformed question (a choice with one option, a `noul` with criteria, a missing `instructions`), with what is wrong.
+  - 429 "You've used all the work included in your account. Choose a plan or add credits to continue." Retrying does not help until the owner adds a plan or credits.
+  - 429 "Too many decisions at once. Try again in a moment." The bot has already retried once.
+  - 503 "Decisions need NeboAI connected. Sign in to NeboAI and try again."
+  - 502 when the decision service fails.
 - Billed to the bot owner's NeboAI account like any model call. See pricing at https://neboai.com/pricing.
 
 #### `nebo.chat`

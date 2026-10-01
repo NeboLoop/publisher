@@ -251,7 +251,11 @@ Via MCP (app with a sidecar): `agent(action: binary-token, id)` and the returned
 
 ### Updates
 
-For a private app or one shared with a loop, every bundle upload rebuilds the installable package at once and Nebo tells the bots that installed the app. A bot that is online reinstalls the new package right away; one that is offline does it when it next connects. You do not need to raise `version` for this. A **public**, unlisted or invite-only app keeps its approved package until a new version passes review; uploading a bundle to it never pushes an unreviewed version to anyone, and installed bots get the approved version the same way.
+For a private app or one shared with a loop, every bundle upload rebuilds the installable package at once and Nebo tells the bots that installed the app. A bot that is online puts the rebuilt package in place right away; one that is offline does it when it next connects. You do not need to raise `version` for this, and the owner's settings, schedules and data for the app are kept. A **public**, unlisted or invite-only app keeps its approved package until a new version passes review; uploading a bundle to it never pushes an unreviewed version to anyone.
+
+A **new version** (a raised `version`, approved by review for a public app) follows each owner's automatic-updates setting for that app. It is off unless the owner turns it on, so by default the bot shows "Update available" and the owner applies it from Settings → Updates or the Inbox; with automatic updates on, the bot applies it right away. An update never grants new permissions: a permission the new version adds is asked for when the app first needs it.
+
+If NeboAI withdraws an app from the marketplace, every bot that installed it turns it off and tells the owner: "<name> is turned off. NeboAI withdrew <name> from the marketplace, so it is turned off here. Everything it saved is kept." Nothing is deleted. The same happens to a withdrawn skill, plugin, connector or employee.
 
 > The marketplace `.napp` for an app carries the agent payload (`manifest.json`, `agent.json`, `AGENT.md`, `signatures.json`), the page under `ui/`, and the sidecar under `bin/` when there is one.
 
