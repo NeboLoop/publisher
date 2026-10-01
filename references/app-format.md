@@ -251,7 +251,7 @@ Via MCP (app with a sidecar): `agent(action: binary-token, id)` and the returned
 
 ### Updates
 
-Every bundle upload rebuilds the installable package. For an active app that is not public (private, unlisted or shared with a loop), the bots that installed it are told right away and update in place, so uploading the new bundle is how you ship a fix to them. A **public** app reaches installed bots only when a new version passes review; uploading a bundle to a public listing never pushes an unreviewed version to anyone.
+For a private app or one shared with a loop, every bundle upload rebuilds the installable package at once, so the next install gets the new files. A bot that already installed the app picks up the change when the app is installed again, or when you publish a higher version number: Nebo checks for newer versions every few hours and applies one with the owner's yes, or on its own when automatic updates are on for that app. So to ship a fix to bots that already have the app, raise `version` and upload. A **public**, unlisted or invite-only app keeps its approved package until a new version passes review; uploading a bundle to it never pushes an unreviewed version to anyone.
 
 > The marketplace `.napp` for an app carries the agent payload (`manifest.json`, `agent.json`, `AGENT.md`, `signatures.json`), the page under `ui/`, and the sidecar under `bin/` when there is one.
 
