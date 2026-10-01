@@ -5,16 +5,12 @@
   "description": "Track real estate deals with AI-powered analysis.",
   "type": "app",
   "permissions": [
-    "storage:readwrite",
-    "subagent:invoke",
-    "network:outbound"
+    "storage:readwrite"
   ],
   "window": {
     "title": "Deal Tracker",
     "width": 1024,
     "height": 768,
-    "min_width": 480,
-    "min_height": 400,
     "resizable": true
   }
 }

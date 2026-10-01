@@ -10,48 +10,35 @@ triggers:
 ---
 # Workspace Management
 
-Tools for managing the deal pipeline, documents, and analysis.
+How to help with the deal pipeline the Deal Tracker page shows.
 
-## list_deals
+## What you can see
 
-List all deals, optionally filtered by stage.
-- **Method:** GET /deals
-- **Query:** `stage` (optional) — filter by pipeline stage
-- Returns: Array of deal objects with id, name, amount, stage, created_at
+The page keeps the pipeline in the app's storage and shares it with you as
+chat context:
 
-## create_deal
+- `pipeline`: every deal, each with `id`, `name`, `amount`, `stage`
+  (`prospect`, `analysis`, `negotiation`, `closed`) and `created_at`.
+- `deal`: the deal the user just opened, when they opened one.
 
-Create a new deal in the pipeline.
-- **Method:** POST /deals
-- **name** (string, required): Deal/property name
-- **amount** (number, required): Deal value
-- **stage** (string, optional): Initial stage (default: "prospect")
-- Returns: Created deal object
+Answer from that context. Never invent a deal, an amount or a stage that
+is not in it.
 
-## update_deal
+## Listing deals
 
-Update a deal's stage or details.
-- **Method:** PUT /deals/{id}
-- **stage** (string, optional): Move to a new pipeline stage
-- **name** (string, optional): Update deal name
-- **amount** (number, optional): Update deal amount
-- Returns: Updated deal object
+Group by stage in pipeline order (prospect → analysis → negotiation →
+closed), with each deal's name and amount. Filter to one stage when the
+user names it.
 
-## get_deal
+## Creating and moving deals
 
-Get full details for a specific deal.
-- **Method:** GET /deals/{id}
-- Returns: Deal object with all fields and attached documents
+The page owns the pipeline: the user adds a deal with **+ New Deal** and the
+page saves it. When the user asks you to create or move a deal, tell them
+the exact name, amount and stage to enter, and confirm the amount and name
+before they save.
 
-## delete_deal
+## Analyzing a deal
 
-Remove a deal from the pipeline.
-- **Method:** DELETE /deals/{id}
-- Returns: 204 No Content
-
-## Workflow
-
-When the user asks to move a deal, update its `stage` field:
-- prospect → analysis → negotiation → closed
-
-When creating a deal, always confirm the amount and name before saving.
+When `deal` is in the context, analyze that deal: compute the metrics the
+user asks for (cap rate, cash-on-cash, IRR), show your math, and flag
+assumptions explicitly.

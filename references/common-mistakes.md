@@ -50,6 +50,11 @@
 |---------|-------------|-----|
 | Missing `type: "app"` | Agent loads but no UI/window | Set `"type": "app"` in manifest.json |
 | Missing `ui/index.html` | App page shows 404 | Create `ui/` with `index.html` entry point |
+| AGENT.md without `artifact_type: app` | Marketplace creates a plain agent, no page | Add `artifact_type: app` to the AGENT.md frontmatter |
+| Unquoted `: ` in an AGENT.md frontmatter value | Frontmatter unreadable; the app silently becomes a plain agent | Quote the value: `description: "Track deals: fast"` |
+| Page uses a bare `nebo` global or `import ... from '@neboai/app-sdk'` without a bundler | `ReferenceError` / module not found | Load `/sdk/nebo.global.js` and read `window.NeboAppSDK.nebo` |
+| Category "productivity" (or any non-marketplace name) | MCP create refuses: unknown category | Use a marketplace name (`marketplace(action: list_categories)`) or leave it out |
+| A page file over 10 MB, or `ui/` over 50 MB | File skipped / bundle refused | Shorten, compress or downscale the asset |
 | Sidecar doesn't read `$NEBO_APP_SOCK` | Connection timeout | Read env var and bind socket there |
 | Sidecar startup > 10s | Launch fails | Optimize startup or increase via `manifest.startup_timeout` (max 120s) |
 | manifest.json uses `artifact_type` | Deserialization may fail | Use `type` (serde renames it) |

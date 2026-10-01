@@ -16,7 +16,7 @@ triggers:
   - nebo marketplace
 metadata:
   author: neboai
-  version: "0.3.0"
+  version: "0.3.1"
 ---
 # NeboAI — From Idea to Marketplace
 
@@ -648,16 +648,16 @@ Installing an agent runs its **dependency cascade** first: any `requires.plugins
 
 ## Building Apps
 
-An app is an agent with a dedicated frontend UI. Use when chat output isn't enough.
+An app is an agent with a dedicated frontend UI. Use when chat output isn't enough. Most apps are **page-only** (AGENT.md, manifest.json, agent.json and `ui/`, no binary); a Rust sidecar is optional, for apps that need a backend of their own.
 
 ### Directory Structure
 
 ```
 my-app/
-├── AGENT.md              # Persona
+├── AGENT.md              # Persona — frontmatter says artifact_type: app
 ├── manifest.json         # Identity + type: "app" + permissions + window
-├── agent.json            # Optional — workflows, skills, inputs, sidecar tools, scopes
-├── ui/                   # Required — static frontend (served via neboapp:// protocol)
+├── agent.json            # Optional — workflows, skills, inputs, sidecar tools, scopes ({} is fine)
+├── ui/                   # Required — static frontend, exactly as served (build into it)
 │   ├── index.html
 │   ├── style.css
 │   └── app.js
@@ -669,6 +669,22 @@ my-app/
     └── src/main.rs
 ```
 
+### AGENT.md (App)
+
+```markdown
+---
+name: my-app
+description: "What this app does: the outcome, in one line."
+artifact_type: app
+metadata:
+  version: "1.0.0"
+---
+# My App
+```
+
+- `artifact_type: app` makes the marketplace create an app; without it the item is a plain agent with no page.
+- **Quote any frontmatter value that contains `: `.** Unquoted, the YAML is invalid and the marketplace silently publishes a plain agent.
+
 ### manifest.json (App)
 
 ```json
@@ -678,21 +694,29 @@ my-app/
   "version": "1.0.0",
   "type": "app",
   "description": "What this app does",
-  "permissions": ["storage:readwrite", "subagent:invoke", "network:outbound"],
+  "permissions": ["storage:readwrite"],
   "window": { "title": "My App", "width": 1024, "height": 768, "resizable": true }
 }
 ```
 
-Note: The JSON key is `"type"`, not `"artifact_type"`.
+Note: The JSON key is `"type"`, not `"artifact_type"`. `window` also takes `fullscreen` (bool) and `orientation` (`portrait` | `landscape` | `any`) for games and full-screen pages. Permissions are `prefix:scope`: `storage:readwrite`, `subagent:<agent-id>`, `network:<host>` or `network:*`, `device:motion`.
 
-### Frontend SDK (`@neboai/app-sdk`)
+### The page (`ui/`)
 
-```bash
-pnpm add @neboai/app-sdk
+Static files served at `/apps/<id>/ui/`. Allowed types: HTML/CSS/JS, images, fonts, video (`mp4 webm mov`), sound (`mp3 wav ogg m4a`), `wasm`, 3D models (`glb gltf`). **At most 10 MB per file and 50 MB in total.** Build into `ui/` with any bundler; content-hashed file names are cached for a year, everything else is revalidated on each open.
+
+### Frontend SDK
+
+Load the SDK Nebo serves and read its one global (there is no bare `nebo` global):
+
+```html
+<script src="/sdk/nebo.global.js"></script>
+<script>const { nebo } = window.NeboAppSDK;</script>
 ```
 
+(Bundled builds may `pnpm add @neboai/app-sdk` and `import { nebo } from '@neboai/app-sdk'`.)
+
 ```typescript
-import { nebo } from '@neboai/app-sdk';
 
 // Fetch — relative → sidecar, absolute → proxied through Nebo
 const deals = await nebo.fetch('/deals').then(r => r.json());
@@ -725,8 +749,8 @@ nebo.surfaces.on('run_started', (e) => showSpinner());
 nebo.surfaces.on('run_finished', (e) => hideSpinner());
 nebo.surfaces.send('action_name', { key: 'value' });
 
-// WebSocket — auto-reconnecting
-const ws = new nebo.WebSocket('/events');
+// WebSocket — auto-reconnecting, to the app's agent (no arguments)
+const ws = new nebo.WebSocket();
 ws.onmessage = (e) => console.log(e.data);
 
 // Identity
@@ -898,7 +922,8 @@ A description of **10–500 characters** is required to submit.
 - Multi-file skill (references/, scripts/, assets/): `skill(action: bundle-token, id)` → run the returned curl with a `.zip` of the skill directory.
 - Employee: `agent(action: binary-token, id)` → run the returned curl with `config=@agent.json`.
 - Plugin: for each platform, `plugin(action: binary-token, id, platform)` → run the returned curl with `file=@<binary>` (and `config=@plugin.json` + `skills=@skills.tar.gz` on the first platform).
-- App: `agent(action: binary-token, id)` → curl with `file=@<sidecar>`, `platform=<platform>`, and `ui=@ui.tar.gz` on the first platform.
+- App, page-only (no sidecar): `agent(action: bundle-token, id)` → curl with a `.zip` of `AGENT.md`, `agent.json`, `manifest.json`, `ui/` and any `skills/`. The hub stores `ui/` as the app's page, keeps manifest.json as its manifest, and rebuilds the installable package. Check the response's skipped count: a file over 10 MB or of a disallowed type is skipped.
+- App with a sidecar: `agent(action: binary-token, id)` → curl with `file=@<sidecar>`, `platform=<platform>`, and `ui=@ui.tar.gz` (plus `config=@agent.json`) on the first platform.
 
 Upload tokens last **5 minutes** and only open that one item's uploads. Get a fresh one if it expires. The server reads only these multipart fields: `file` (binary), `config` (agent.json / plugin.json), `skills` (plugin skills tarball), `ui` (app frontend tarball), `platform`. The manifest is set with `manifestContent` on create/update, never uploaded. Use `curl --http1.1` for large uploads.
 
@@ -915,7 +940,7 @@ Submit returns the review outcome:
 - `flagged` / `manual_review` — a person on the NeboAI team will review it.
 - For plugins and apps, the binary scan runs in the background (checked every 30 seconds); check with `get`.
 
-Plugins and apps **must** have at least one platform binary for the version, or submit is refused.
+Plugins, and apps that declare a sidecar, **must** have at least one platform binary for the version, or submit is refused. A page-only app needs no binary once its bundle is uploaded.
 
 **Never** call review or admin tools (for example a `review` tool), and never try to approve, reject or change a review status. Those are for the NeboAI team only.
 
@@ -972,6 +997,9 @@ neboai validate <directory>
 - [ ] Budget math: sum of activity `token_budget.max` ≤ workflow `budget.total_per_run`
 - [ ] Required files exist (SKILL.md for skills, AGENT.md + agent.json for agents)
 - [ ] manifest.json uses `"type"` key, not `"artifact_type"`
+- [ ] App AGENT.md frontmatter has `artifact_type: app`, and every value containing `: ` is quoted
+- [ ] App `ui/` files are at most 10 MB each and 50 MB in total
+- [ ] Category, if set, is one of the marketplace's names (`marketplace(action: list_categories)`), e.g. "Get organized"; not "productivity"
 - [ ] Sidecar tool definitions are in agent.json `tools` array
 
 **If validation fails:** Fix it yourself. Don't ask the user to fix JSON or YAML — that's your job.
@@ -1018,7 +1046,8 @@ The manifest column is the content set via `manifestContent` on create/update �
 | Skill | SKILL.md | — | — | — |
 | Plugin | PLUGIN.md | plugin.json | Per-platform binary | skills/ tarball |
 | Agent (employee) | AGENT.md | agent.json (config only — no binary/platform) | — | — |
-| App | AGENT.md | agent.json (with the first sidecar upload) | Per-platform sidecar binary + `ui` tarball (required) | — |
+| App (page-only) | AGENT.md (`artifact_type: app`) | agent.json + manifest.json + `ui/`, one `.zip` via bundle-token | — | — |
+| App (with sidecar) | AGENT.md (`artifact_type: app`) | agent.json (with the first sidecar upload) | Per-platform sidecar binary + `ui` tarball | — |
 | Connector | connector.json (the `mcpServers` block) | — | — | — |
 | Collection | — (created via `/collections`) | items added via `/collections/{id}/items` | — | — |
 
@@ -1058,7 +1087,7 @@ neboai binaries delete <artifact-id> <binary-id>  # Delete a binary (fix duplica
 ## Critical Rules
 
 1. **Config = agent.json.** NEVER upload manifest.json as the config field.
-2. **Agent/app uploads read only `config`.** No `file`, no `platform` — the server's agent branch ignores both. (The CLI still sends `platform=linux-amd64`, but it's unused.)
+2. **Agent (employee) uploads read only `config`.** No `file`, no `platform` — the server's agent branch ignores both. (The CLI still sends `platform=linux-amd64`, but it's unused.)
 3. **Plugin.json metadata must be hardcoded.** No `{{template_vars}}` in top-level scalar fields (id, slug, name, version, description, …) or platform entries — that's unfilled scaffolding and the validator rejects it. Nested structures MAY contain `{{...}}`: the `setup`/`auth` wizard flows and `events[].command` use Nebo's runtime `{{key}}` substitution, and third-party tool descriptions often mention `{{...}}` as prose.
 4. **JSON must be valid.** No trailing commas. Validate: `python3 -c "import json; json.load(open('file.json'))"`
 5. **Upload tokens expire in 5 minutes and only open that one item's uploads.** The CLI uses the signed-in session instead, so it never needs one.
@@ -1072,6 +1101,7 @@ neboai binaries delete <artifact-id> <binary-id>  # Delete a binary (fix duplica
 13. **Tools from agent.json, not discovery endpoint.** Sidecars do NOT serve `GET /_tools`.
 14. **Plugin tools: input on stdin.** Not CLI arguments. Read JSON from stdin.
 15. **on_error fallback default is `notify_owner`.** Not `skip` or `abort`.
+16. **Apps say so in AGENT.md.** `artifact_type: app` in the frontmatter, and quote any value containing `: `, or the marketplace makes a plain agent.
 
 ---
 
@@ -1086,7 +1116,9 @@ Handle these yourself — never dump errors on the user.
 | Validation failed | Fix the issue in your generated files and retry |
 | Auth failed (CLI) | Run `neboai auth login` again |
 | "description is required for marketplace submission" | Write a 10–500 character description and publish again |
-| "upload at least one platform binary" | Build the plugin/app binaries (dist/…/<platform>/) and publish again |
+| "upload at least one platform binary" | Plugin or sidecar app: build the binaries (dist/…/<platform>/) and publish again. Page-only app: upload the bundle (bundle-token) first |
+| "unknown category" | Use one of the marketplace's names (`marketplace(action: list_categories)`), or leave category out |
+| App published as a plain agent (no page) | AGENT.md frontmatter lacks `artifact_type: app` or has an unquoted `: `; fix it and update the item |
 | Name already taken | Suggest a variant or ask the user for a new name |
 
 **CLI tools:**
@@ -1106,7 +1138,7 @@ For deep dives on each artifact type:
 - [references/building-skills.md](references/building-skills.md) — Writing skills that trigger reliably and produce consistent results
 - [references/building-plugins.md](references/building-plugins.md) — Binary architecture, tool design, events, auth, cross-platform builds
 - [references/building-agents.md](references/building-agents.md) — Persona craft, workflow design, triggers, budgets, testing
-- [references/building-apps.md](references/building-apps.md) — Frontend SDK, sidecar architecture, state management, tool discovery
+- [references/building-apps.md](references/building-apps.md) — Frontend SDK, building the page, sidecar architecture, state management, tool discovery
 - [references/listing-quality.md](references/listing-quality.md) — Writing a listing that gets installed: benefit-first description, plain-language inputs, name/category
 - [references/review-rubric.md](references/review-rubric.md) — What NeboAI reviewers look for, so the user can check their listing before submitting
 

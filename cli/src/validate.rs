@@ -13,7 +13,7 @@ pub fn run(path: &str, type_override: Option<&str>) -> Result<()> {
         Some(t) => ArtifactType::from_str(t).context("Invalid artifact type")?,
         None => detect::detect(dir).context(
             "Could not detect artifact type. Ensure the directory contains the expected files \
-             (SKILL.md, plugin.json, agent.json+AGENT.md, or manifest.json with artifact_type: \"app\")",
+             (SKILL.md, plugin.json, agent.json+AGENT.md, or manifest.json with type: \"app\")",
         )?,
     };
 

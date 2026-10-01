@@ -50,7 +50,7 @@ How to architect, design, and build Nebo apps — agents with dedicated UIs that
 
 ### Three Layers
 
-1. **Frontend** (`ui/`) — Static HTML/JS/CSS. Uses `@neboai/app-sdk` for all platform communication.
+1. **Frontend** (`ui/`) — Static HTML/JS/CSS. Uses the app SDK (`window.NeboAppSDK`, loaded from `/sdk/nebo.global.js`) for all platform communication.
 2. **Agent** (`AGENT.md`) — Persona powering the chat panel. Reads your skills to know how to use tools.
 3. **Sidecar** (optional) — Native binary handling data, computation, external APIs. Communicates via gRPC.
 
@@ -61,25 +61,34 @@ How to architect, design, and build Nebo apps — agents with dedicated UIs that
 | No sidecar | Simple UIs, all data via `nebo.storage` or `nebo.agents.invoke()` |
 | With sidecar | Complex data models, external API integration, heavy computation, SQLite |
 
-**Start without a sidecar.** Add one when `nebo.storage` and `nebo.agents.invoke()` aren't enough.
+**Start without a sidecar.** Add one when `nebo.storage` and `nebo.agents.invoke()` aren't enough. A page-only app publishes as one bundle (AGENT.md, agent.json, manifest.json and `ui/`) and needs no binary at all; see [app-format.md](app-format.md#publishing).
 
 ## Frontend Development
 
 ### SDK Setup
 
-```bash
-pnpm add @neboai/app-sdk
-```
-
-Or use the global build (no bundler needed):
+Load the SDK Nebo serves (it always matches the running Nebo) and read the one global it defines. There is no bare `nebo` global:
 
 ```html
-<script src="https://unpkg.com/@neboai/app-sdk/dist/nebo.global.js"></script>
+<script src="/sdk/nebo.global.js"></script>
+<script>
+  const { nebo } = window.NeboAppSDK;
+</script>
 ```
 
-```typescript
-import { nebo } from '@neboai/app-sdk';
+For a bundled build, `pnpm add @neboai/app-sdk` gives the same API as an import (`import { nebo } from '@neboai/app-sdk'`). An unbundled page cannot import a bare package name.
+
+### Building the page
+
+`ui/` is served exactly as it is on disk, so any static build works. Keep the source (`src/`, `package.json`) beside `ui/` and build into it, for example with bun:
+
+```bash
+bun build ./src/main.js --outdir ./ui --entry-naming "[name]-[hash].[ext]" --minify
 ```
+
+Content-hashed names (`main-0a8ksftt.js`) are cached for a year; every other file is revalidated on each open, so a rebuild with hashed names shows at once. Never rename files by hand to get past a cache.
+
+A page may carry images, fonts, video (`mp4 webm mov`), sound (`mp3 wav ogg m4a`), `wasm` and 3D models (`glb gltf`); video and sound answer range requests, so seeking works. Limits: 10 MB per file, 50 MB in total.
 
 ### Complete SDK API
 
@@ -113,12 +122,12 @@ const weather = await nebo.fetch('https://api.weather.gov/points/40,-74')
   .then(r => r.json());
 ```
 
-#### `nebo.WebSocket(path?)`
+#### `nebo.WebSocket()`
 
-Auto-reconnecting WebSocket with exponential backoff (1s → 30s max):
+Auto-reconnecting WebSocket to the app's agent (`/ws/app/<id>`), with exponential backoff (1s → 30s max). It takes no arguments:
 
 ```typescript
-const ws = new nebo.WebSocket('/events');
+const ws = new nebo.WebSocket();
 
 ws.onopen = () => console.log('Connected');
 ws.onmessage = (e) => console.log('Data:', e.data);
@@ -130,6 +139,8 @@ ws.close();
 ```
 
 Reconnects automatically on disconnect — no manual retry logic needed.
+
+To talk to a server of your own (a multiplayer game server, a live feed), open a plain `new WebSocket('wss://...')` straight from the page; app pages carry no content security policy that blocks it.
 
 #### `nebo.storage`
 
@@ -327,8 +338,9 @@ nebo.identity.invalidate(); // Clear cache, re-fetch on next get()
 1. **Dark theme default.** Nebo's shell is dark. Match it.
 2. **No heavy frameworks required.** Vanilla JS works great. React/Vue/Svelte if you want.
 3. **Responsive to window resize.** Users drag the window — handle it.
-4. **Loading states.** Show skeleton/spinner while sidecar responds.
+4. **Loading states.** Show skeleton/spinner while data loads.
 5. **Error states.** Show clear messages when things fail. Don't blank screen.
+6. **Phones.** A scrolling page pans vertically only (`html, body { touch-action: pan-y; overscroll-behavior-x: none; }`) and nothing is wider than the screen. Use `dvh` units, not `100vh`.
 
 ## Sidecar Development
 
@@ -543,7 +555,7 @@ skills/
   "version": "1.0.0",
   "description": "Track real estate deals with AI-powered analysis.",
   "type": "app",
-  "permissions": ["storage:readwrite", "subagent:invoke"],
+  "permissions": ["storage:readwrite"],
   "window": {
     "title": "Deal Tracker",
     "width": 1024,
@@ -558,8 +570,12 @@ skills/
 ## Testing
 
 - [ ] `ui/index.html` loads without errors in browser
+- [ ] The page reads the SDK from `window.NeboAppSDK` (loads `/sdk/nebo.global.js`)
 - [ ] Chat panel mounts and agent responds
-- [ ] `nebo.fetch('/...')` reaches sidecar and returns data
+- [ ] State survives closing and reopening the window (`nebo.storage`)
+- [ ] AGENT.md frontmatter has `artifact_type: app`, and every value containing `: ` is quoted
+- [ ] Every file in `ui/` is at most 10 MB and the whole `ui/` at most 50 MB
+- [ ] `nebo.fetch('/...')` reaches sidecar and returns data (sidecar apps)
 - [ ] Sidecar starts within 10 seconds
 - [ ] Sidecar handles SIGTERM gracefully
 - [ ] Data persists across sidecar restarts
@@ -573,7 +589,7 @@ skills/
 
 | Anti-Pattern | Fix |
 |-------------|-----|
-| All logic in the agent (no sidecar) | Move data/computation to sidecar, let agent reason |
+| Heavy data model squeezed into `nebo.storage` | Move data/computation to a sidecar, let agent reason |
 | All logic in the sidecar (no agent) | Use the agent for judgment, user interaction, summarization |
 | Frontend calls external APIs directly | Use `nebo.fetch` with absolute URLs (CORS-free proxy) |
 | No loading states | Users think it's broken during async ops |
@@ -585,3 +601,5 @@ skills/
 | Binary takes >10s to start | Startup timeout → launch failure. Increase via `manifest.startup_timeout` (max 120s) |
 | Not using `nebo.surfaces` for state | UI and agent get out of sync |
 | Missing `nebo.WebSocket` for real-time | Polling instead of streaming |
+| Unquoted `: ` in AGENT.md frontmatter | The marketplace cannot read it and publishes a plain agent; quote the value |
+| Page written against a bare `nebo` global | `ReferenceError`; read `window.NeboAppSDK.nebo` |

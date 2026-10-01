@@ -291,7 +291,7 @@ async fn publish_skill(dir: &Path, account_id: &str, visibility: &str) -> Result
     // Upload the whole directory as a bundle so references/, scripts/, and
     // assets/ ship alongside SKILL.md. The server re-extracts SKILL.md into the
     // manifest, so this is safe (and a no-op in effect) for single-file skills.
-    let file_count = api::upload_bundle(&item.id, dir).await?;
+    let file_count = api::upload_bundle(&item.id, dir, api::BundleKind::Skill).await?;
     println!("  Uploaded bundle ({file_count} files: SKILL.md + references/scripts/assets)");
 
     // Set the human marketplace listing: a clean Title Case display name (the
@@ -496,14 +496,10 @@ async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<(
             .unwrap_or(""),
     );
 
-    // An app installs from its sidecar binaries (the UI rides along with
-    // them), so at least one is required — refuse before creating anything.
+    // An app with a sidecar installs from its binaries (the page rides along
+    // with the first one). A page-only app has none: its page, persona and
+    // manifest go up as one bundle, and the hub builds the package from it.
     let sidecars = app_sidecars(dir)?;
-    if sidecars.is_empty() {
-        bail!(
-            "No sidecar binary found. Put one per platform in dist/app/<platform>/ (one of {PLATFORMS:?}), or build sidecar/ for this machine."
-        );
-    }
 
     let item = upsert(
         account_id,
@@ -517,8 +513,17 @@ async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<(
     )
     .await?;
 
+    if sidecars.is_empty() {
+        let file_count = api::upload_bundle(&item.id, dir, api::BundleKind::App).await?;
+        println!(
+            "  Uploaded bundle ({file_count} files: AGENT.md, agent.json, manifest.json, ui/, skills/)"
+        );
+    }
+
     let ui_tarball = std::env::temp_dir().join(format!("neboai-{}-ui.tar.gz", item.id));
-    build_tarball(&dir.join("ui"), "ui", &ui_tarball)?;
+    if !sidecars.is_empty() {
+        build_tarball(&dir.join("ui"), "ui", &ui_tarball)?;
+    }
     let config_path = dir.join("agent.json");
     let config_path = config_path.exists().then_some(config_path);
 
