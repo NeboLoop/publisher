@@ -722,7 +722,7 @@ Load the SDK Nebo serves and read its one global (there is no bare `nebo` global
 const deals = await nebo.fetch('/deals').then(r => r.json());
 const ext = await nebo.fetch('https://api.example.com/data').then(r => r.json());
 
-// Storage — persistent async KV, shared with the app's employee
+// Storage: persistent async KV, shared with the app's employee
 await nebo.storage.setItem('key', value);
 const val = await nebo.storage.getItem('key');   // exactly what setItem stored
 await nebo.storage.removeItem('key');
@@ -742,7 +742,7 @@ nebo.chat.send('message');
 nebo.chat.onMessage((msg) => { ... });
 nebo.chat.unmount();
 
-// Surfaces — the live channel that carries A2UI cards from the employee
+// Surfaces: the live channel that carries A2UI cards from the employee
 // (pair with nebo.a2ui.init(processor)). Typed events such as state_snapshot
 // are not sent to app pages yet: use storage.onChange for live data.
 nebo.surfaces.connect();
