@@ -58,7 +58,7 @@
 | A page file with an extension Nebo does not know (or none) | Video or model never loads: served as `application/octet-stream` under `nosniff` | Use a listed type (`mp4 webm mov m4v`, `glb gltf`, `woff2`...) with its real extension |
 | `ui/boards/`, `src/` or `node_modules/` left inside `ui/` | Working files ship, or the bundle passes 50 MB | Keep only what the page loads in `ui/`; build into it |
 | A tilt game without `device:motion` in manifest permissions | `devicemotion` never fires (sensors blocked by Permissions-Policy) | Add `device:motion`; on iPhone also call `DeviceMotionEvent.requestPermission()` from a tap |
-| Expecting a bundle upload to update installed copies of a **public** app | Installed bots stay on the reviewed version | Submit the new version; public updates reach bots after review. Private, unlisted and loop apps update on upload |
+| Expecting a bundle upload to update installed copies of an app | Bots that already installed it keep their copy; a public, unlisted or invite-only listing keeps its reviewed package | Raise `version` with the upload so Nebo offers the update. Public, unlisted and invite-only apps also need the new version to pass review. Private and loop apps rebuild on upload, so new installs get it at once |
 | Sidecar doesn't read `$NEBO_APP_SOCK` | Connection timeout | Read env var and bind socket there |
 | Sidecar startup > 10s | Launch fails | Optimize startup or increase via `manifest.startup_timeout` (max 120s) |
 | manifest.json uses `artifact_type` | Deserialization may fail | Use `type` (serde renames it) |
