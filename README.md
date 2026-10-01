@@ -105,7 +105,7 @@ neboai status <id>               # Draft / In review / Published
 Anyone can publish, free. Every public version is reviewed:
 
 - **Text-only items** (skills, employees, connectors, collections) get an automated content scan. A clean scan is approved at once and the item is listed immediately.
-- **Items with binaries** (plugins and apps) are scanned in the background, and approved automatically when the scan is clean. Plugins and apps need at least one platform binary.
+- **Items with binaries** (plugins, and apps with a sidecar) are scanned in the background, and approved automatically when the scan is clean. Plugins and sidecar apps need at least one platform binary; a page-only app needs none.
 - Anything the scan flags waits for a person on the NeboAI team.
 
 A listed item stays listed when you publish an update. More in the [publishing overview](https://neboai.com/help/publish-overview) and the [publisher skill guide](https://neboai.com/help/publisher-skill).
@@ -117,7 +117,7 @@ A listed item stays listed when you publish an update. More in the [publishing o
 | Skill | `SKILL.md` (+ `references/`, `scripts/`, `assets/`) | [building-skills](references/building-skills.md), [skill-format](references/skill-format.md) |
 | Employee | `AGENT.md` + `agent.json` | [building-agents](references/building-agents.md), [agent-format](references/agent-format.md) |
 | Plugin | `PLUGIN.md` + `plugin.json` + binaries in `dist/plugin/<platform>/` | [building-plugins](references/building-plugins.md), [plugin-format](references/plugin-format.md) |
-| App | `AGENT.md` + `manifest.json` + `ui/` + sidecar binaries | [building-apps](references/building-apps.md), [app-format](references/app-format.md) |
+| App | `AGENT.md` (`artifact_type: app`) + `manifest.json` + `ui/`, plus sidecar binaries only if it has a backend | [building-apps](references/building-apps.md), [app-format](references/app-format.md) |
 | Connector | `connector.json` (an `mcpServers` block) | [connector-format](references/connector-format.md) |
 | Collection | `collection.json` | [collection-format](references/collection-format.md) |
 

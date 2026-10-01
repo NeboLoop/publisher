@@ -590,14 +590,46 @@ pub async fn upload_binary(
     Ok(())
 }
 
-// --- Skill bundle upload (multi-file skills) ---
+// --- Bundle upload (multi-file skills, page-only apps) ---
 
-/// Zip an entire skill directory in memory, preserving relative paths, then POST
-/// it to /skills/{id}/bundle. The server extracts SKILL.md into the manifest and
-/// stores the rest (references/, scripts/, assets/) as skill files. `.git/` is
-/// skipped to keep the upload small; the server filters other noise itself.
-pub async fn upload_bundle(id: &str, dir: &std::path::Path) -> Result<usize> {
-    let (zip_bytes, file_count) = zip_dir(dir)?;
+/// What a bundle carries: a skill's runtime files, or an app's page.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BundleKind {
+    /// SKILL.md plus references/, scripts/ and assets/.
+    Skill,
+    /// AGENT.md, agent.json, manifest.json, the page under ui/ and the
+    /// app's own skills/. The hub stores ui/ as the app's page and builds
+    /// the installable package.
+    App,
+}
+
+impl BundleKind {
+    /// Whether a path inside the artifact directory ships in this bundle.
+    fn ships(self, rel: &str) -> bool {
+        let top = rel.split('/').next().unwrap_or("");
+        match self {
+            BundleKind::Skill => {
+                rel == "SKILL.md" || top == "references" || top == "scripts" || top == "assets"
+            }
+            BundleKind::App => {
+                matches!(rel, "AGENT.md" | "agent.json" | "manifest.json")
+                    || top == "skills"
+                    || (top == "ui"
+                        && !rel
+                            .split('/')
+                            .any(|c| c == "node_modules" || c.starts_with('.')))
+            }
+        }
+    }
+}
+
+/// Zip the runtime files of an artifact directory in memory, preserving
+/// relative paths, then POST it to /skills/{id}/bundle. For a skill the
+/// server extracts SKILL.md into the manifest and stores the rest
+/// (references/, scripts/, assets/) as skill files; for an app it keeps
+/// manifest.json as the app's manifest and stores ui/ as its page.
+pub async fn upload_bundle(id: &str, dir: &std::path::Path, kind: BundleKind) -> Result<usize> {
+    let (zip_bytes, file_count) = zip_dir(dir, kind)?;
 
     let upload_token = auth::get_token().await?;
     let base = base_url();
@@ -605,7 +637,7 @@ pub async fn upload_bundle(id: &str, dir: &std::path::Path) -> Result<usize> {
 
     let form = reqwest::multipart::Form::new().part(
         "file",
-        reqwest::multipart::Part::bytes(zip_bytes).file_name("skill.zip"),
+        reqwest::multipart::Part::bytes(zip_bytes).file_name("bundle.zip"),
     );
 
     // HTTP/1.1 only — HTTP/2 causes stream errors on large multipart uploads.
@@ -629,7 +661,7 @@ pub async fn upload_bundle(id: &str, dir: &std::path::Path) -> Result<usize> {
 
 /// Build a zip of `dir` in memory. Returns the zip bytes and the number of files
 /// included. Entry paths are relative to `dir`. Skips `.git/` and common OS noise.
-fn zip_dir(dir: &std::path::Path) -> Result<(Vec<u8>, usize)> {
+fn zip_dir(dir: &std::path::Path, kind: BundleKind) -> Result<(Vec<u8>, usize)> {
     use std::io::Write;
     use zip::write::SimpleFileOptions;
 
@@ -651,14 +683,12 @@ fn zip_dir(dir: &std::path::Path) -> Result<(Vec<u8>, usize)> {
             .with_context(|| format!("path escapes skill dir: {}", path.display()))?;
         // Normalize to forward slashes; the server matches path components.
         let rel_str = rel.to_string_lossy().replace('\\', "/");
-        // The runtime bundle is exactly the documented skill format: SKILL.md
-        // plus the references/, scripts/, and assets/ trees. Everything else
-        // in the directory is dev scaffolding (a cli/ crate with target/, CI
-        // files, Formula, …) that must never ship — an unfiltered walk blows
-        // the upload size cap and leaks non-runtime files.
-        let top = rel_str.split('/').next().unwrap_or("");
-        let allowed =
-            rel_str == "SKILL.md" || top == "references" || top == "scripts" || top == "assets";
+        // The runtime bundle is exactly the documented format (see
+        // `BundleKind::ships`). Everything else in the directory is dev
+        // scaffolding (a cli/ crate with target/, an app's src/, CI files,
+        // Formula, …) that must never ship — an unfiltered walk blows the
+        // upload size cap and leaks non-runtime files.
+        let allowed = kind.ships(&rel_str);
         let base = rel
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -674,4 +704,47 @@ fn zip_dir(dir: &std::path::Path) -> Result<(Vec<u8>, usize)> {
     }
     zip.finish()?;
     Ok((cursor.into_inner(), count))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A page-only app ships its persona, config, manifest and page, and
+    /// nothing a builder keeps beside them (source, boards, packages).
+    #[test]
+    fn an_app_bundle_carries_the_page_and_the_package_files_only() {
+        let app = BundleKind::App;
+        for rel in [
+            "AGENT.md",
+            "agent.json",
+            "manifest.json",
+            "ui/index.html",
+            "ui/assets/film.mp4",
+            "skills/workspace-mgmt/SKILL.md",
+        ] {
+            assert!(app.ships(rel), "{rel} ships");
+        }
+        for rel in [
+            "src/main.js",
+            "brief.md",
+            "refs/board-1.png",
+            "package.json",
+            "ui/node_modules/x/index.js",
+            "ui/.cache/x",
+            "SKILL.md",
+        ] {
+            assert!(!app.ships(rel), "{rel} stays home");
+        }
+    }
+
+    #[test]
+    fn a_skill_bundle_is_the_documented_skill_format() {
+        let skill = BundleKind::Skill;
+        assert!(skill.ships("SKILL.md"));
+        assert!(skill.ships("references/a.md"));
+        assert!(skill.ships("scripts/gate.js"));
+        assert!(!skill.ships("cli/src/main.rs"));
+        assert!(!skill.ships("ui/index.html"));
+    }
 }

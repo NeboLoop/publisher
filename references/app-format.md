@@ -1,28 +1,49 @@
 # App Format
 
-Apps are agents with a dedicated frontend UI. They bundle a persona, an HTML frontend, and a native sidecar binary. The marketplace installs an app from its sidecar binaries, so a published app needs at least one.
+Apps are agents with a dedicated frontend UI: a persona plus a page that opens in its own window. Most apps are **page-only**: AGENT.md, manifest.json, agent.json and a static `ui/` folder, published as one bundle. A native **sidecar** binary is optional, for apps that need a backend of their own (SQLite, heavy computation, complex external APIs).
 
 ## Directory Structure
 
 ```
 my-app/
-├── AGENT.md              # Required — persona and instructions
-├── manifest.json         # Required — identity, permissions, window config
-├── agent.json            # Optional — workflows, skills, user inputs
-├── ui/                   # Required — static frontend files
+├── AGENT.md              # Required — persona; frontmatter says artifact_type: app
+├── manifest.json         # Required — identity, "type": "app", permissions, window
+├── agent.json            # Optional — workflows, skills, user inputs ({} is fine)
+├── ui/                   # Required — the page, exactly as served
 │   ├── index.html        #   Entry point
 │   ├── style.css
-│   └── app.js
+│   ├── app.js
+│   └── assets/           #   images, video, sound, 3D models, fonts
 ├── skills/               # Optional — skill docs for the agent
 │   └── workspace-mgmt/
 │       └── SKILL.md
-├── sidecar/              # Native backend (build it, or put per-platform builds in dist/app/<platform>/)
+├── sidecar/              # Optional — native backend (build it, or put per-platform builds in dist/app/<platform>/)
 │   ├── Cargo.toml
 │   ├── src/main.rs
 │   └── target/release/
 │       └── my-app-sidecar
 └── data/                 # Auto-created at runtime
 ```
+
+Only AGENT.md, agent.json, manifest.json, `ui/` and `skills/` are published for a page-only app. Source you build from (`src/`, `package.json`, `node_modules/`) stays on your machine; build into `ui/`.
+
+## AGENT.md
+
+```markdown
+---
+name: deal-tracker
+description: "Track deals through your pipeline: stages, amounts, and a chat that knows the deal in front of you."
+artifact_type: app
+metadata:
+  version: "1.0.0"
+---
+# Deal Tracker
+
+You are a deal analyst embedded in a visual pipeline app.
+```
+
+- **`artifact_type: app`** in the frontmatter (top level or under `metadata:`) is what makes the marketplace create an app. Without it the item becomes a plain agent with no page.
+- **Quote any value that contains `: `** (a colon followed by a space). `description: Track deals: fast` is invalid YAML; the marketplace then cannot read the frontmatter and silently treats the app as a plain agent. Quoting every description avoids it.
 
 ## manifest.json
 
@@ -31,13 +52,9 @@ my-app/
   "id": "deal-tracker",
   "name": "@acme/agents/deal-tracker",
   "version": "1.0.0",
-  "description": "Track real estate deals with AI-powered analysis.",
+  "description": "Track deals through your pipeline.",
   "type": "app",
-  "permissions": [
-    "storage:readwrite",
-    "subagent:invoke",
-    "network:outbound"
-  ],
+  "permissions": ["storage:readwrite"],
   "window": {
     "title": "Deal Tracker",
     "width": 1024,
@@ -54,27 +71,55 @@ my-app/
 | `id` | Unique identifier. Must match directory name. |
 | `name` | Qualified name (`@org/agents/name`). |
 | `version` | Semantic version. |
-| `type` | Must be `"app"`. |
+| `type` | Must be `"app"`. The JSON key is `type`, never `artifact_type`. |
+
+## Window
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `title` | the agent's name | Window title |
+| `width`, `height` | 1024, 768 | Desktop window size |
+| `resizable` | `true` | Whether the window can be resized |
+| `fullscreen` | `false` | Take the whole screen (games, films). On the phone: no app bar, system bars hidden, screen kept awake, pull-to-refresh off. Pad the page with `env(safe-area-inset-*)` and `viewport-fit=cover`. |
+| `orientation` | `"portrait"` | `"portrait"`, `"landscape"` or `"any"` on the phone |
+
+There are no `min_width` / `min_height` fields.
 
 ## Permissions
 
+Every permission is `prefix:scope`; a permission with an unknown prefix is refused. Ask for the least the app needs.
+
 | Permission | What It Grants |
 |------------|---------------|
-| `storage:readwrite` | Scoped KV store |
-| `subagent:invoke` | Invoke other agents |
-| `network:outbound` | HTTP requests through proxy |
+| `storage:readwrite` | Scoped KV store (`nebo.storage`) |
+| `subagent:<agent-id>` | Invoke another agent from the page (the app's own agent needs none) |
+| `network:<host>` / `network:*` | HTTP requests through Nebo's proxy (`nebo.fetch` with an absolute URL) |
+| `device:motion` | Gyroscope and accelerometer (`devicemotion`, `deviceorientation`). On iPhone the page also calls `DeviceMotionEvent.requestPermission()` from a tap. |
 | `filesystem:read` | Read user files |
 | `shell:execute` | Run shell commands |
 | `memory:read` | Read agent memories |
 | `oauth:google` | Google OAuth flow |
 
+## The Page (`ui/`)
+
+- Served at `/apps/<id>/ui/`; `ui/index.html` is the entry.
+- File types a published page may carry: `html css js mjs jsx tsx json map`, images (`png jpg jpeg gif svg webp avif ico`), fonts (`woff woff2 ttf otf`), sound (`mp3 wav ogg m4a aac flac opus`), video (`mp4 webm mov m4v`), `wasm`, and 3D models (`glb gltf`). Other types and dot files are dropped.
+- **Limits: 10 MB per file, 50 MB for the whole bundle.** A file over 10 MB is skipped by the marketplace, so check the upload result's skipped count.
+- Video and sound are served with their real content types and answer range requests, so seeking and scroll-scrubbing work. On the phone, `<video muted playsinline>` plays inline.
+- Caching: a file whose name carries a content hash (`main-0a8ksftt.js`, what `bun build` writes with `[name]-[hash].[ext]`) is cached for a year; every other file is revalidated on each open. Rebuild with hashed names instead of renaming files by hand.
+
 ## Frontend SDK
 
-Install: `pnpm add @neboai/app-sdk`
+Load the SDK Nebo serves, then read the one global it defines:
 
-```typescript
-import { nebo } from '@neboai/app-sdk';
+```html
+<script src="/sdk/nebo.global.js"></script>
+<script>
+  const { nebo } = window.NeboAppSDK;   // there is no bare `nebo` global
+</script>
+```
 
+```javascript
 // Identity
 const agent = await nebo.identity.get();
 
@@ -103,9 +148,11 @@ nebo.chat.mount(document.getElementById('chat'), {
   contextId: currentDoc.id
 });
 
-// HTTP to sidecar
+// HTTP to the sidecar (apps with a sidecar only)
 const resp = await nebo.fetch('/projects');
 ```
+
+The `@neboai/app-sdk` npm package has the same API for bundled builds (`import { nebo } from '@neboai/app-sdk'`). An unbundled page cannot import a bare package name; use the served global.
 
 ## Sidecar (Optional)
 
@@ -163,21 +210,34 @@ The CLI will:
 1. Validate manifest.json (`type: "app"` present)
 2. Validate AGENT.md and agent.json (if present)
 3. Verify `ui/index.html` exists
-4. Find the sidecar binaries: one per platform in `dist/app/<platform>/` (e.g. `dist/app/darwin-arm64/my-app`), or the local build in `sidecar/target/release/` for this machine's platform. At least one is required.
+4. Look for sidecar binaries: one per platform in `dist/app/<platform>/` (e.g. `dist/app/darwin-arm64/my-app`), or the local build in `sidecar/target/release/` for this machine's platform
 5. Create the app with AGENT.md as its manifest (or update it to the new version)
-6. Upload each sidecar binary; the first upload also carries `agent.json` (config) and a tar.gz of `ui/` (the `ui` field)
-7. Submit for review. The binaries are scanned in the background and the app is listed once the scan passes.
+6. **Page-only app (no sidecar):** upload one bundle (a .zip of AGENT.md, agent.json, manifest.json, `ui/` and any `skills/`). The marketplace stores `ui/` as the app's page, keeps manifest.json as the app's manifest (window, permissions), and builds the installable package.
+   **App with a sidecar:** upload each sidecar binary; the first upload also carries `agent.json` (config) and a tar.gz of `ui/` (the `ui` field)
+7. Submit for review. A page-only app is reviewed at once; sidecar binaries are scanned in the background and the app is listed once the scan passes.
 
-> The marketplace `.napp` for an app carries the agent payload (`manifest.json`, `agent.json`, `AGENT.md`, `signatures.json`), the sidecar under `bin/`, and the uploaded UI under `ui/`.
+Via MCP (page-only app):
+1. `agent(action: create, name, description, manifestContent: "<AGENT.md with artifact_type: app>", version)`
+2. `agent(action: bundle-token, id)` and run the returned curl with a `.zip` holding `AGENT.md`, `agent.json`, `manifest.json`, `ui/` and any `skills/`
+3. `agent(action: submit, id, version)`
 
-Via MCP: `agent(action: create, manifestContent: "<AGENT.md with artifact_type: app in its frontmatter>")`, then `agent(action: binary-token, id)` and the returned curl per platform (`file=@<sidecar>`, `platform=<platform>`, `ui=@ui.tar.gz`), then `agent(action: submit, id, version)`.
+Via MCP (app with a sidecar): `agent(action: binary-token, id)` and the returned curl per platform (`file=@<sidecar>`, `platform=<platform>`, `ui=@ui.tar.gz` and `config=@agent.json` on the first), then `submit`.
+
+> The marketplace `.napp` for an app carries the agent payload (`manifest.json`, `agent.json`, `AGENT.md`, `signatures.json`), the page under `ui/`, and the sidecar under `bin/` when there is one.
+
+## Category
+
+Optional. The marketplace accepts only its own category names: `Run your business`, `Create content`, `Find customers`, `Manage money`, `Get organized`, `Communicate`, `Learn & grow`, `Research & decide`, `Handle documents`, `Build & connect` (list them with `marketplace(action: list_categories)`). Via MCP pass the name exactly (`category: "Get organized"`); any other value, such as `productivity`, is refused. The CLI reads a slug from manifest.json `category` (`business`, `content`, `customers`, `money`, `organized`, `communicate`, `learn`, `research`, `documents`, `build`) and files anything else under Build & connect.
 
 ## Key Rules
 
 - `type` MUST be `"app"` in manifest.json
+- AGENT.md frontmatter MUST say `artifact_type: app`, and any value containing `: ` MUST be quoted
 - `ui/index.html` MUST exist
-- Sidecar must read `$NEBO_APP_SOCK` and bind a Unix socket there
+- Page files: at most 10 MB each and 50 MB in total, allowed types only
+- The page reads the SDK from `window.NeboAppSDK` (load `/sdk/nebo.global.js`)
+- Sidecar (when there is one) must read `$NEBO_APP_SOCK` and bind a Unix socket there
 - The launched sidecar binary must be a regular file — symlinks are rejected at launch (a symlinked dev binary like `bin/my-app → target/release/my-app` is fine for hot-reload detection, but the file that actually runs must resolve to a regular executable)
 - Sidecar startup timeout: 10 seconds default, max 120s (set via `startup_timeout`)
-- Window config accepts `title`, `width`, `height`, `resizable` (defaults: width 1024, height 768, resizable true). There are no `min_width`/`min_height` fields.
-- A published app needs at least one sidecar binary for its version; submit is refused without one
+- Window config accepts `title`, `width`, `height`, `resizable`, `fullscreen`, `orientation` (defaults: 1024 x 768, resizable, not fullscreen, portrait). There are no `min_width`/`min_height` fields.
+- An app that declares a sidecar needs at least one sidecar binary for its version; a page-only app needs none
