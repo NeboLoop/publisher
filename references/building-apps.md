@@ -159,11 +159,16 @@ Server-persisted async key-value store (like `localStorage` but async and persis
 
 ```typescript
 await nebo.storage.setItem('preferences', { theme: 'dark', currency: 'USD' });
-const prefs = await nebo.storage.getItem('preferences');
+const prefs = await nebo.storage.getItem('preferences'); // the same object back
 await nebo.storage.removeItem('preferences');
 const allKeys = await nebo.storage.keys();
 await nebo.storage.clear();
+
+// Redraw when the data changes, whoever changed it
+const stop = nebo.storage.onChange(({ keys, action, source }) => render());
 ```
+
+`getItem` returns exactly what `setItem` stored, or `null`. See "Your App's Data" below for how the page and the app's employee share this store.
 
 #### `nebo.agents`
 
@@ -253,7 +258,9 @@ nebo.chat.unmount();
 
 #### `nebo.surfaces`
 
-Real-time agent-to-app event system. The agent pushes state changes — your UI reacts:
+> **What Nebo sends today.** App pages receive interactive cards from the app's employee (through `nebo.a2ui`, which needs `nebo.surfaces.connect()`) and storage changes (through `nebo.storage.onChange`). The typed events below are part of the SDK, but Nebo does not send them to app pages yet, and nothing answers `send()` or `requestState()`. Use `storage.onChange` for live data and `nebo.a2ui` for cards. A card reaches only the app it was made for, a click on it goes to that app's employee, and a page opened after the card was sent does not receive it. The SDK has no card renderer of its own: bundle `@a2ui/web_core` and pass its MessageProcessor to `nebo.a2ui.init()`.
+
+Event system (reserved for future use):
 
 ```typescript
 nebo.surfaces.connect();
@@ -343,6 +350,46 @@ const me = await nebo.identity.get();
 
 nebo.identity.invalidate(); // Clear cache, re-fetch on next get()
 ```
+
+### Your App's Data
+
+The page's `nebo.storage` and the app's employee read and write **one store**: the same keys and the same values. A contact the owner adds by saying "add John Smith, 555 0100" to the app's employee is the contact the page shows, and a contact typed into the page is one the employee can find when someone asks "what's John's number?".
+
+**What the employee can do.** The app's employee has a built-in tool for its own app's data. It can read a key, save any JSON value under a key, delete a key, list keys (optionally by prefix), and search. A search matches fields by text, any case (`name` contains "john smith"), reaches nested fields (`phone.mobile`), and looks inside a key that holds a list item by item. You do not declare or install anything for this; every app's employee has it.
+
+**Who can reach it.** Only the app's own employee, and only for its own app. Another employee that needs the data asks the app's employee ("give me John Smith's number") and gets the answer back. Other apps never see your store.
+
+**Keeping the page in step.** Every save or delete, by the employee or by any open window of the app, is reported to every open window through `nebo.storage.onChange`. Write the page so it redraws:
+
+```typescript
+async function load() {
+  const contacts = (await nebo.storage.getItem('contacts')) ?? [];
+  renderContacts(contacts);
+}
+
+load();
+nebo.storage.onChange((change) => {
+  // change = { appId, keys: ['contacts'], action: 'set' | 'delete', source: 'employee' | 'page' }
+  if (change.keys.includes('contacts')) load();
+});
+```
+
+Your page's own writes are reported too, so the handler above also covers a second window of the same app.
+
+**Choosing keys.** Pick a shape both sides can find:
+
+| Shape | Example | Good for |
+|-------|---------|----------|
+| One key holding a list | `contacts` = `[{ name, phone }, ...]` | Small collections the page draws all at once |
+| One key per record, shared prefix | `contact:42` = `{ name, phone }` | Larger collections, records changed one at a time |
+| One key per setting | `settings` = `{ theme, sound }` | Preferences and saves |
+
+Tell the employee about your keys in its instructions (AGENT.md), for example: "Contacts are a list under the key `contacts`, each `{ name, phone: { mobile, work }, email }`."
+
+**Things to know.**
+- A string that is itself valid JSON, such as `"42"` or `"true"`, comes back parsed (`42`, `true`). Store it inside an object (`{ "code": "42" }`) if the type matters.
+- There is no per-key or per-app quota, but each write is one request: keep each value well under 2 MB. Large or relational data belongs in a sidecar with its own database.
+- `setItem` and `removeItem` do not throw when a write is refused. Read back anything that must not be lost.
 
 ### UI Principles
 
@@ -612,7 +659,8 @@ skills/
 | No bundled skills | Agent doesn't know *when* to use tools |
 | Sidecar stores data outside `$NEBO_DATA_DIR` | Data lost on reinstall |
 | Binary takes >10s to start | Startup timeout → launch failure. Increase via `manifest.startup_timeout` (max 120s) |
-| Not using `nebo.surfaces` for state | UI and agent get out of sync |
+| Page never redraws after the employee changes data | Listen with `nebo.storage.onChange` and reload what the page shows |
+| Page built on `nebo.surfaces` events like `state_snapshot` | Nebo does not send them yet; use `nebo.storage.onChange` and `nebo.a2ui` |
 | Missing `nebo.WebSocket` for real-time | Polling instead of streaming |
 | Unquoted `: ` in AGENT.md frontmatter | The marketplace cannot read it and publishes a plain agent; quote the value |
 | Page written against a bare `nebo` global | `ReferenceError`; read `window.NeboAppSDK.nebo` |
