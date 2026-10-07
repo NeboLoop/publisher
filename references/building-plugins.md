@@ -362,24 +362,29 @@ The description is what the LLM reads to decide whether to use this tool:
 
 Include: what it does, when to use it, what it requires.
 
-### Approval Gates
+### Declaring Reads
 
-Tool `approval` **defaults to `true`** — all tools require user confirmation unless you explicitly set `"approval": false`. Set `false` only for read-only, non-destructive tools:
+In Ask mode Nebo asks the owner before every plugin call that changes something. A call counts as a change unless the manifest's top-level `reads` declares it a read, so a plugin that declares nothing asks every time, its reads included. Each entry is a command's words, then the flags it may carry:
 
 ```json
 {
-  "name": "gmail.search",
-  "approval": false,
-  "description": "Search Gmail messages. Read-only, no confirmation needed."
+  "reads": [
+    "gmail search --query --max",
+    "gmail get --id --format"
+  ]
 }
 ```
 
-Keep the default `true` for:
+A call is a read when its first arguments are the entry's words, compared whole (`gmail search` never matches `gmail search-and-archive`), and every flag it carries is one the entry names. Any other flag makes it a change. List both spellings of a flag with a short form (`-o --output`), and declare whole commands, not groups.
+
+Never declare:
 - Sending messages (email, Slack, SMS)
 - Deleting data
 - Making purchases
 - Modifying calendar events
 - Any action that can't be undone
+
+The marketplace review shows your reads to the reviewer and holds any entry whose words or flags name a write (create, update, delete, send, ...).
 
 ### Timeouts
 
@@ -604,6 +609,6 @@ Before publishing:
 | Unstructured text output | Always output JSON |
 | Silent failures (exit 0, empty output) | Return error JSON on stderr, exit > 0 |
 | Hardcoded user config | Use configSchema |
-| Tools with no approval for destructive actions | Add `"approval": true` |
+| A write declared in `reads` | Declare only commands that change nothing |
 | Overly broad tool descriptions | Be specific about when to use |
 | No bundled skills | Agent won't know when to call your tools |
