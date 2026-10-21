@@ -39,8 +39,10 @@ enum Commands {
         /// Override type detection
         #[arg(long, value_parser = ["skill", "plugin", "agent", "app", "connector", "collection"])]
         r#type: Option<String>,
-        /// Marketplace visibility. "public" submits the version for review and
-        /// lists it once approved; "private" and "loop" are not listed (no review).
+        /// Marketplace visibility. Every publish submits the version for review,
+        /// and it installs once approved: "public" is then listed; "private" is
+        /// for your own bots; "loop" reaches your loops' other members only as
+        /// an approved version.
         #[arg(long, value_parser = ["public", "private", "loop"], default_value = "public")]
         visibility: String,
         /// Accepted for compatibility; publishing is re-runnable, so running

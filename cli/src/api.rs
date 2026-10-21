@@ -445,8 +445,10 @@ pub async fn update_listing(id: &str, name: &str, long_description: Option<&str>
 }
 
 /// Submit the item's current version for review and report the outcome.
-/// Text-only items get a content scan and are approved at once when clean;
-/// items with binaries are scanned in the background.
+/// Every review is queued and scanned in the background: the content of
+/// every item, and the binaries of a plugin or app. A clean scan is approved
+/// automatically; a version that ships a script or anything executable waits
+/// for a person.
 pub async fn submit(id: &str, version: &str) -> Result<()> {
     let (client, token) = authenticated_client().await?;
     let base = base_url();
@@ -482,9 +484,9 @@ pub fn submit_outcome(status: &str) -> &'static str {
     match status {
         "approved" | "auto_approved" => "Review: approved. It is published.",
         "flagged" | "manual_review" => {
-            "Review: the automated scan flagged it, so a person on the NeboAI team will review it. Check with `neboai status <id>`."
+            "Review: a person on the NeboAI team will review it (the scan flagged it, or it ships a script or something executable). Check with `neboai status <id>`."
         }
-        _ => "Review: in progress (binaries are scanned in the background). Check with `neboai status <id>`.",
+        _ => "Review: queued. It is scanned in the background, usually within a minute or two; a clean scan is approved automatically, and a script or anything executable waits for a person. Check with `neboai status <id>`.",
     }
 }
 
