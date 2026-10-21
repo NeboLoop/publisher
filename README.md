@@ -106,7 +106,7 @@ Anyone can publish, free. Every public version is reviewed:
 
 - **Every publish queues a review**, scanned in the background, usually within a minute or two: the content of every item, and the binaries of plugins and sidecar apps. A clean scan is approved automatically. Plugins and sidecar apps need a binary for every platform they declare; a page-only app needs none.
 - **Scripts and anything executable wait for a person** on the NeboAI team, however clean the scan.
-- **Nothing installs before approval**, a private item on your own bots included; a loop item reaches the loop's other members only as an approved version.
+- **Packages exist only for an approved version**, a private item's included. Nobody but you sees or installs an item before a version of it is approved: a loop item reaches the loop's other members only as an approved version.
 - Anything the scan flags waits for a person on the NeboAI team.
 
 A listed item stays listed when you publish an update. More in the [publishing overview](https://neboai.com/help/publish-overview) and the [publisher skill guide](https://neboai.com/help/publisher-skill).
