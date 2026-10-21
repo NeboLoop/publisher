@@ -104,8 +104,9 @@ neboai status <id>               # Draft / In review / Published
 
 Anyone can publish, free. Every public version is reviewed:
 
-- **Text-only items** (skills, employees, connectors, collections) get an automated content scan. A clean scan is approved at once and the item is listed immediately.
-- **Items with binaries** (plugins, and apps with a sidecar) are scanned in the background, and approved automatically when the scan is clean. Plugins and sidecar apps need at least one platform binary; a page-only app needs none.
+- **Every publish queues a review**, scanned in the background, usually within a minute or two: the content of every item, and the binaries of plugins and sidecar apps. A clean scan is approved automatically. Plugins and sidecar apps need a binary for every platform they declare; a page-only app needs none.
+- **Scripts and anything executable wait for a person** on the NeboAI team, however clean the scan.
+- **Packages exist only for an approved version**, a private item's included. Nobody but you sees or installs an item before a version of it is approved: a loop item reaches the loop's other members only as an approved version.
 - Anything the scan flags waits for a person on the NeboAI team.
 
 A listed item stays listed when you publish an update. More in the [publishing overview](https://neboai.com/help/publish-overview) and the [publisher skill guide](https://neboai.com/help/publisher-skill).

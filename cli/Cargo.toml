@@ -1,6 +1,6 @@
 [package]
 name = "neboai"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "CLI for publishing to the NeboAI marketplace"
 license = "Apache-2.0"

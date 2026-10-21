@@ -95,8 +95,10 @@ async fn upsert(
     visibility: &str,
     manifest: &str,
 ) -> Result<Upserted> {
-    if visibility == "public" && description.chars().count() < 10 {
-        bail!("A public listing needs a description of at least 10 characters.");
+    // Every publish submits (finalize), so the hub's submit rule applies to
+    // every visibility. Checked before anything is uploaded.
+    if let Some(problem) = description_problem(description) {
+        bail!("{problem}");
     }
     match api::find_artifact(name, artifact_type).await? {
         Some(existing) => {
@@ -184,6 +186,12 @@ async fn publish_collection(dir: &Path, account: &api::Account, visibility: &str
     }
 
     apply_listing(dir, &id, &name, title).await?;
+    // A collection uploads nothing: it is its item list. An unlisted one is
+    // not reviewed.
+    if visibility != "public" {
+        println!("\nDone! Collection '{name}' v{version} saved ({visibility}). It is not listed, so it is not reviewed.");
+        return Ok(());
+    }
     finalize(&id, &name, "Collection", &version, visibility, None).await?;
     Ok(())
 }
@@ -588,10 +596,11 @@ fn app_sidecars(dir: &Path) -> Result<Vec<(&'static str, std::path::PathBuf)>> {
 
 // --- Helpers ---
 
-/// Finish a publish. A public item is submitted for review when it is new or
-/// not yet published; a published item stays listed when updated, so its new
-/// version goes live without another submit (new binaries are still scanned
-/// before they ship). Private and loop items are not listed and not reviewed.
+/// Finish a publish by submitting the version. Uploads only stage the version
+/// on the hub: nothing reaches anyone's bot, a private item's own bots
+/// included, until a submitted version is approved. A published item stays
+/// listed on its current version while the new one is reviewed, and a version
+/// already in review returns that review.
 async fn finalize(
     id: &str,
     name: &str,
@@ -600,47 +609,61 @@ async fn finalize(
     visibility: &str,
     previous_status: Option<&str>,
 ) -> Result<()> {
-    if visibility != "public" {
-        println!("\nDone! {kind} '{name}' v{version} saved ({visibility}). It is not listed, so it is not reviewed.");
-        return Ok(());
-    }
-    match previous_status {
-        Some("active") => {
-            println!("\nDone! {kind} '{name}' updated to v{version}. It stays published.");
+    println!("Submitting v{version} for review...");
+    api::submit(id, version).await?;
+    match (visibility, previous_status) {
+        ("public", Some("active")) => {
+            println!("\nDone! {kind} '{name}' v{version} submitted. It stays published on its current version until v{version} is approved. Item ID: {id}");
         }
-        Some("pending_review") | Some("review") => {
-            println!("\nDone! {kind} '{name}' updated to v{version}. It is already in review; check with `neboai status {id}`.");
+        ("public", _) => {
+            println!("\nDone! {kind} '{name}' v{version} submitted. Item ID: {id}");
         }
         _ => {
-            println!("Submitting v{version} for review...");
-            api::submit(id, version).await?;
-            println!("\nDone! {kind} '{name}' v{version} submitted. Item ID: {id}");
+            println!("\nDone! {kind} '{name}' v{version} submitted ({visibility}: not listed). It installs once approved. Item ID: {id}");
         }
     }
     Ok(())
 }
 
-/// Marketplace submission caps the description at 500 characters. The skill/agent
-/// frontmatter `description` doubles as the trigger text and is often longer, so
-/// cap it here (counting chars, not bytes) before sending it to create/submit.
+/// The hub's submit rule for a description, exactly: trimmed of surrounding
+/// whitespace it is at least 10 and at most 500 bytes (the hub counts bytes,
+/// as Go's len does). None when the description passes.
+fn description_problem(description: &str) -> Option<&'static str> {
+    let len = description.trim().len();
+    if len < 10 {
+        return Some("A description of at least 10 characters is required: every publish is submitted for review.");
+    }
+    if len > 500 {
+        return Some("The description is too long for review (500 bytes at most; letters outside plain ASCII take more than one).");
+    }
+    None
+}
+
+/// Marketplace submission caps the description at 500 bytes (the hub counts
+/// bytes, see `description_problem`). The skill/agent frontmatter
+/// `description` doubles as the trigger text and is often longer, so cap it
+/// here before sending it to create/submit.
 const MAX_DESCRIPTION: usize = 500;
 
-/// Truncate `desc` to at most MAX_DESCRIPTION characters, cutting on a word
-/// boundary and appending an ellipsis when it has to shorten. The full text
-/// still lives in the manifest's frontmatter; this only trims the marketplace
-/// metadata field.
+/// Truncate `desc` to at most MAX_DESCRIPTION bytes, the ellipsis included,
+/// cutting on a char boundary (and a word boundary when that loses little).
+/// The full text still lives in the manifest's frontmatter; this only trims
+/// the marketplace metadata field.
 fn cap_description(desc: &str) -> String {
     let desc = desc.trim();
-    if desc.chars().count() <= MAX_DESCRIPTION {
+    if desc.len() <= MAX_DESCRIPTION {
         return desc.to_string();
     }
-    // Reserve one char for the ellipsis so the result stays within the cap.
-    let limit = MAX_DESCRIPTION - 1;
-    let truncated: String = desc.chars().take(limit).collect();
+    // Reserve the ellipsis's bytes so the result stays within the cap.
+    let mut limit = MAX_DESCRIPTION - '…'.len_utf8();
+    while !desc.is_char_boundary(limit) {
+        limit -= 1;
+    }
+    let truncated = &desc[..limit];
     let body = match truncated.rfind(char::is_whitespace) {
         // Only snap back to a word boundary if it doesn't lose too much text.
         Some(idx) if idx >= limit / 2 => &truncated[..idx],
-        _ => &truncated,
+        _ => truncated,
     };
     format!("{}…", body.trim_end())
 }
@@ -860,6 +883,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn description_rule_matches_the_hubs_submit() {
+        assert!(description_problem("too short").is_some()); // 9 bytes
+        assert!(description_problem("   ten chars!   ").is_none()); // trimmed: 10
+        assert!(description_problem("  short   ").is_some());
+        assert!(description_problem(&"a".repeat(500)).is_none());
+        assert!(description_problem(&"a".repeat(501)).is_some());
+        assert!(description_problem(&"é".repeat(251)).is_some()); // 502 bytes
+    }
+
+    #[test]
     fn short_description_is_unchanged() {
         let d = "A concise skill description.";
         assert_eq!(cap_description(d), d);
@@ -867,10 +900,38 @@ mod tests {
 
     #[test]
     fn long_description_is_capped_within_limit() {
-        let d = "word ".repeat(200); // 1000 chars
+        let d = "word ".repeat(200); // 1000 bytes
         let out = cap_description(&d);
-        assert!(out.chars().count() <= MAX_DESCRIPTION);
+        assert!(out.len() <= MAX_DESCRIPTION);
         assert!(out.ends_with('…'));
+        assert!(description_problem(&out).is_none());
+    }
+
+    #[test]
+    fn capped_description_passes_the_hubs_byte_rule() {
+        // Multi-byte punctuation near the cap: em dashes (3 bytes) and
+        // curly quotes (3 bytes) must never split or push past 500 bytes.
+        for d in [
+            "a".repeat(496) + "—tail of the description",
+            "a".repeat(497) + "“quoted”",
+            "—".repeat(400),
+            "“word” ".repeat(100),
+        ] {
+            let out = cap_description(&d);
+            assert!(out.len() <= MAX_DESCRIPTION, "{} bytes", out.len());
+            assert!(out.ends_with('…'));
+            assert!(description_problem(&out).is_none());
+        }
+    }
+
+    #[test]
+    fn description_exactly_at_the_limit_is_kept() {
+        let d = "a".repeat(497) + "—"; // 500 bytes
+        assert_eq!(d.len(), MAX_DESCRIPTION);
+        assert_eq!(cap_description(&d), d);
+        let over = d.clone() + "a"; // 501 bytes
+        let out = cap_description(&over);
+        assert!(out.len() <= MAX_DESCRIPTION && out.ends_with('…'));
     }
 
     #[test]
