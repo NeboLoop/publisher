@@ -1,6 +1,6 @@
 {
   "name": "@neboai/publisher",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The neboai CLI: build, validate and publish to the NeboAI marketplace",
   "license": "Apache-2.0",
   "repository": {
