@@ -95,8 +95,10 @@ async fn upsert(
     visibility: &str,
     manifest: &str,
 ) -> Result<Upserted> {
-    if visibility == "public" && description.chars().count() < 10 {
-        bail!("A public listing needs a description of at least 10 characters.");
+    // Every publish submits (finalize), so the hub's submit rule applies to
+    // every visibility. Checked before anything is uploaded.
+    if let Some(problem) = description_problem(description) {
+        bail!("{problem}");
     }
     match api::find_artifact(name, artifact_type).await? {
         Some(existing) => {
@@ -623,6 +625,20 @@ async fn finalize(
     Ok(())
 }
 
+/// The hub's submit rule for a description, exactly: trimmed of surrounding
+/// whitespace it is at least 10 and at most 500 bytes (the hub counts bytes,
+/// as Go's len does). None when the description passes.
+fn description_problem(description: &str) -> Option<&'static str> {
+    let len = description.trim().len();
+    if len < 10 {
+        return Some("A description of at least 10 characters is required: every publish is submitted for review.");
+    }
+    if len > 500 {
+        return Some("The description is too long for review (500 bytes at most; letters outside plain ASCII take more than one).");
+    }
+    None
+}
+
 /// Marketplace submission caps the description at 500 characters. The skill/agent
 /// frontmatter `description` doubles as the trigger text and is often longer, so
 /// cap it here (counting chars, not bytes) before sending it to create/submit.
@@ -861,6 +877,16 @@ fn current_platform() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn description_rule_matches_the_hubs_submit() {
+        assert!(description_problem("too short").is_some()); // 9 bytes
+        assert!(description_problem("   ten chars!   ").is_none()); // trimmed: 10
+        assert!(description_problem("  short   ").is_some());
+        assert!(description_problem(&"a".repeat(500)).is_none());
+        assert!(description_problem(&"a".repeat(501)).is_some());
+        assert!(description_problem(&"é".repeat(251)).is_some()); // 502 bytes
+    }
 
     #[test]
     fn short_description_is_unchanged() {
