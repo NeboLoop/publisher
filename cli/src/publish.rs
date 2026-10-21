@@ -639,27 +639,31 @@ fn description_problem(description: &str) -> Option<&'static str> {
     None
 }
 
-/// Marketplace submission caps the description at 500 characters. The skill/agent
-/// frontmatter `description` doubles as the trigger text and is often longer, so
-/// cap it here (counting chars, not bytes) before sending it to create/submit.
+/// Marketplace submission caps the description at 500 bytes (the hub counts
+/// bytes, see `description_problem`). The skill/agent frontmatter
+/// `description` doubles as the trigger text and is often longer, so cap it
+/// here before sending it to create/submit.
 const MAX_DESCRIPTION: usize = 500;
 
-/// Truncate `desc` to at most MAX_DESCRIPTION characters, cutting on a word
-/// boundary and appending an ellipsis when it has to shorten. The full text
-/// still lives in the manifest's frontmatter; this only trims the marketplace
-/// metadata field.
+/// Truncate `desc` to at most MAX_DESCRIPTION bytes, the ellipsis included,
+/// cutting on a char boundary (and a word boundary when that loses little).
+/// The full text still lives in the manifest's frontmatter; this only trims
+/// the marketplace metadata field.
 fn cap_description(desc: &str) -> String {
     let desc = desc.trim();
-    if desc.chars().count() <= MAX_DESCRIPTION {
+    if desc.len() <= MAX_DESCRIPTION {
         return desc.to_string();
     }
-    // Reserve one char for the ellipsis so the result stays within the cap.
-    let limit = MAX_DESCRIPTION - 1;
-    let truncated: String = desc.chars().take(limit).collect();
+    // Reserve the ellipsis's bytes so the result stays within the cap.
+    let mut limit = MAX_DESCRIPTION - '…'.len_utf8();
+    while !desc.is_char_boundary(limit) {
+        limit -= 1;
+    }
+    let truncated = &desc[..limit];
     let body = match truncated.rfind(char::is_whitespace) {
         // Only snap back to a word boundary if it doesn't lose too much text.
         Some(idx) if idx >= limit / 2 => &truncated[..idx],
-        _ => &truncated,
+        _ => truncated,
     };
     format!("{}…", body.trim_end())
 }
@@ -896,10 +900,38 @@ mod tests {
 
     #[test]
     fn long_description_is_capped_within_limit() {
-        let d = "word ".repeat(200); // 1000 chars
+        let d = "word ".repeat(200); // 1000 bytes
         let out = cap_description(&d);
-        assert!(out.chars().count() <= MAX_DESCRIPTION);
+        assert!(out.len() <= MAX_DESCRIPTION);
         assert!(out.ends_with('…'));
+        assert!(description_problem(&out).is_none());
+    }
+
+    #[test]
+    fn capped_description_passes_the_hubs_byte_rule() {
+        // Multi-byte punctuation near the cap: em dashes (3 bytes) and
+        // curly quotes (3 bytes) must never split or push past 500 bytes.
+        for d in [
+            "a".repeat(496) + "—tail of the description",
+            "a".repeat(497) + "“quoted”",
+            "—".repeat(400),
+            "“word” ".repeat(100),
+        ] {
+            let out = cap_description(&d);
+            assert!(out.len() <= MAX_DESCRIPTION, "{} bytes", out.len());
+            assert!(out.ends_with('…'));
+            assert!(description_problem(&out).is_none());
+        }
+    }
+
+    #[test]
+    fn description_exactly_at_the_limit_is_kept() {
+        let d = "a".repeat(497) + "—"; // 500 bytes
+        assert_eq!(d.len(), MAX_DESCRIPTION);
+        assert_eq!(cap_description(&d), d);
+        let over = d.clone() + "a"; // 501 bytes
+        let out = cap_description(&over);
+        assert!(out.len() <= MAX_DESCRIPTION && out.ends_with('…'));
     }
 
     #[test]
