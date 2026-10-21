@@ -963,7 +963,7 @@ The CLI:
 
 **Override type:** `neboai publish ./dir --type agent`
 
-**Visibility:** `neboai publish` defaults to `--visibility public` (submitted for review, listed once approved). Use `--visibility private` (or `loop`) to keep it unlisted: no review, installable by the user (or their loop) right away.
+**Visibility:** `neboai publish` defaults to `--visibility public` (submitted for review, listed once approved). Use `--visibility private` (or `loop`) to keep it unlisted. Every publish submits the version: uploads only stage it, and it installs (for the user or their loop) once its review approves it.
 
 **Listing:** the CLI also sets the marketplace listing automatically — a clean Title Case display name (from the frontmatter `title:`, else derived from the lowercase id) and, if a `LISTING.md` is present, the long "What it does" description. See the Marketplace Listing section.
 

@@ -184,6 +184,12 @@ async fn publish_collection(dir: &Path, account: &api::Account, visibility: &str
     }
 
     apply_listing(dir, &id, &name, title).await?;
+    // A collection uploads nothing: it is its item list. An unlisted one is
+    // not reviewed.
+    if visibility != "public" {
+        println!("\nDone! Collection '{name}' v{version} saved ({visibility}). It is not listed, so it is not reviewed.");
+        return Ok(());
+    }
     finalize(&id, &name, "Collection", &version, visibility, None).await?;
     Ok(())
 }
@@ -588,10 +594,11 @@ fn app_sidecars(dir: &Path) -> Result<Vec<(&'static str, std::path::PathBuf)>> {
 
 // --- Helpers ---
 
-/// Finish a publish. A public item is submitted for review when it is new or
-/// not yet published; a published item stays listed when updated, so its new
-/// version goes live without another submit (new binaries are still scanned
-/// before they ship). Private and loop items are not listed and not reviewed.
+/// Finish a publish by submitting the version. Uploads only stage the version
+/// on the hub: nothing reaches anyone's bot, a private item's own bots
+/// included, until a submitted version is approved. A published item stays
+/// listed on its current version while the new one is reviewed, and a version
+/// already in review returns that review.
 async fn finalize(
     id: &str,
     name: &str,
@@ -600,21 +607,17 @@ async fn finalize(
     visibility: &str,
     previous_status: Option<&str>,
 ) -> Result<()> {
-    if visibility != "public" {
-        println!("\nDone! {kind} '{name}' v{version} saved ({visibility}). It is not listed, so it is not reviewed.");
-        return Ok(());
-    }
-    match previous_status {
-        Some("active") => {
-            println!("\nDone! {kind} '{name}' updated to v{version}. It stays published.");
+    println!("Submitting v{version} for review...");
+    api::submit(id, version).await?;
+    match (visibility, previous_status) {
+        ("public", Some("active")) => {
+            println!("\nDone! {kind} '{name}' v{version} submitted. It stays published on its current version until v{version} is approved. Item ID: {id}");
         }
-        Some("pending_review") | Some("review") => {
-            println!("\nDone! {kind} '{name}' updated to v{version}. It is already in review; check with `neboai status {id}`.");
+        ("public", _) => {
+            println!("\nDone! {kind} '{name}' v{version} submitted. Item ID: {id}");
         }
         _ => {
-            println!("Submitting v{version} for review...");
-            api::submit(id, version).await?;
-            println!("\nDone! {kind} '{name}' v{version} submitted. Item ID: {id}");
+            println!("\nDone! {kind} '{name}' v{version} submitted ({visibility}: not listed). It installs once approved. Item ID: {id}");
         }
     }
     Ok(())
