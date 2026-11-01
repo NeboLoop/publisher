@@ -7,7 +7,7 @@ Agents are autonomous workflow runners with a persona (AGENT.md) and operational
 ```
 my-agent/
   AGENT.md         # Persona, communication style, rules
-  agent.json       # Inputs, workflows, activities, skills, pricing
+  agent.json       # Inputs, workflows, activities, skills
   manifest.json    # NPM-style metadata (NOT uploaded as config)
   skills/          # Optional — bundled skills
 ```
@@ -69,10 +69,6 @@ Persona description, communication style, judgment rules, what it does and doesn
       ]
     }
   ],
-  "pricing": {
-    "model": "monthly_fixed",
-    "cost": 47.0
-  },
   "defaults": {
     "timezone": "user_local",
     "configurable": ["workflows.morning-briefing.trigger.cron"]
@@ -90,7 +86,6 @@ Persona description, communication style, judgment rules, what it does and doesn
 | `inputs` | array | User-configurable input fields |
 | `tools` | Vec\<AgentToolDef\> | HTTP endpoint tool definitions (see [Sidecar Tool Definitions](#sidecar-tool-definitions)) |
 | `scopes` | HashMap\<String, ToolScope\> | Per-context tool/skill/plugin restrictions (see [Tool Scoping](#tool-scoping)) |
-| `pricing` | object | Pricing model and cost |
 | `defaults` | object | Default values and configurable paths |
 | `memory` | object | Memory layer configuration |
 
@@ -278,7 +273,7 @@ The CLI will:
 1. Validate AGENT.md frontmatter and agent.json structure
 2. Create the employee with AGENT.md as its manifest (or update it to the new version)
 3. Upload agent.json as its config
-4. Submit for review. The version is then reviewed automatically: a clean scan is approved and listed right away; anything flagged waits for a person on the NeboAI team.
+4. Submit for review. The version is then reviewed automatically: a clean scan is approved and listed right away; anything flagged waits for NeboAI's marketplace reviewer, which approves it, rejects it with a reason, or sends it to NeboAI's owner. Nobody approves their own work. A price is set separately (the `pricing` tool, before you submit), never in agent.json.
 
 ## manifest.json
 

@@ -143,7 +143,7 @@ The CLI will:
 1. Validate the SKILL.md frontmatter and body
 2. Create the skill on NeboAI, or update it to the new version
 3. Upload the skill directory (SKILL.md + references/, scripts/, assets/) as a bundle
-4. Submit for review. The version is then reviewed automatically: a clean scan is approved and listed right away; anything flagged waits for a person on the NeboAI team.
+4. Submit for review. The version is then reviewed automatically: a clean scan is approved and listed right away; anything flagged waits for NeboAI's marketplace reviewer, which approves it, rejects it with a reason, or sends it to NeboAI's owner. Nobody approves their own work.
 
 ## YAML Rules
 

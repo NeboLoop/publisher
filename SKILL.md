@@ -12,11 +12,10 @@ triggers:
   - I have an idea
   - sell on nebo
   - neboai
-  - neboloop
   - nebo marketplace
 metadata:
   author: neboai
-  version: "0.3.1"
+  version: "0.3.2"
 ---
 # NeboAI — From Idea to Marketplace
 
@@ -49,7 +48,7 @@ You respond by asking clarifying questions (if needed), then you build it and pu
 **Every public version is reviewed automatically:**
 - Text-only items (skills, employees, connectors, collections) get a content scan. A clean scan is approved at once and the item is listed immediately.
 - Items with binaries (plugins, apps) are scanned in the background (static analysis of each binary) and approved automatically when clean.
-- Anything the scan flags waits for a person on the NeboAI team. Only the NeboAI team reviews; you never approve anything yourself, including your own work.
+- Anything the scan flags waits for NeboAI's marketplace reviewer, which approves it, rejects it with a reason, or sends it to NeboAI's owner. Nobody approves their own work.
 
 **The user never needs to know which path you're using.** Just build it and publish it.
 
@@ -74,7 +73,7 @@ When a user describes an idea without technical specifics, follow this flow:
 **4. Publish it**
 - Use MCP or CLI (whichever is available)
 - Handle any errors yourself (retry, fix, re-publish)
-- Tell the user what happened: published (approved by the automated review), or in review (a person will look at it). Never promise a listing before the review says approved.
+- Tell the user what happened: published (approved by the automated review), or in review (NeboAI's marketplace reviewer will look at it). Never promise a listing before the review says approved.
 
 **Never:**
 - Ask which artifact type to use (you decide)
@@ -493,7 +492,7 @@ An agent is a job description with workflows: `AGENT.md` (persona) plus `agent.j
 ```
 my-agent/
 ├── AGENT.md           # Persona — markdown, optional frontmatter
-├── agent.json         # Workflows, triggers, tools, inputs, pricing
+├── agent.json         # Workflows, triggers, tools, inputs
 ├── manifest.json      # Marketplace identity
 └── skills/            # Optional — bundled skills
 ```
@@ -509,7 +508,7 @@ description: One-line job description for marketplace discovery.
 ---
 ```
 
-Only `name` and `description` are parsed from AGENT.md frontmatter. Everything else (triggers, workflows, version, pricing) belongs in `agent.json` or `manifest.json`.
+Only `name` and `description` are parsed from AGENT.md frontmatter. Everything else (triggers, workflows, version) belongs in `agent.json` or `manifest.json`. A price is never in a file: see Setting a Price.
 
 ```markdown
 # Agent Name
@@ -587,7 +586,6 @@ Additional manifest fields (all optional): `code`, `tags`, `runtime` (default `"
       "options": [{ "value": "US/Eastern", "label": "Eastern" }]
     }
   ],
-  "pricing": { "model": "monthly_fixed", "cost": 47.0 },
   "defaults": {
     "timezone": "user_local",
     "configurable": ["workflows.morning-briefing.trigger.cron"]
@@ -929,7 +927,9 @@ A description of **10–500 characters** is required to submit.
 
 Upload tokens last **5 minutes** and only open that one item's uploads. Get a fresh one if it expires. The server reads only these multipart fields: `file` (binary), `config` (agent.json / plugin.json), `skills` (plugin skills tarball), `ui` (app frontend tarball), `platform`. The manifest is set with `manifestContent` on create/update, never uploaded. Use `curl --http1.1` for large uploads.
 
-**Step 3: Make it public and submit**
+**Step 3: Price it (if it is sold), make it public and submit**
+
+To charge for it, set the price now, before submit (see Setting a Price): `pricing(action: set, id, ...)`. Free needs nothing.
 
 ```
 skill(action: update, id: "<ID>", visibility: "public")
@@ -939,12 +939,12 @@ skill(action: submit, id: "<ID>", version: "1.0.0")
 
 Submit returns the review outcome:
 - `approved` — the automated review passed; the item is published.
-- `flagged` / `manual_review` — a person on the NeboAI team will review it.
+- `flagged` / `manual_review` — it waits for NeboAI's marketplace reviewer, which approves it, rejects it with a reason, or sends it to NeboAI's owner. Nobody approves their own work.
 - For plugins and apps, the binary scan runs in the background (checked every 30 seconds); check with `get`.
 
 Plugins, and apps that declare a sidecar, **must** have at least one platform binary for the version, or submit is refused. A page-only app needs no binary once its bundle is uploaded.
 
-**Never** call review or admin tools (for example a `review` tool), and never try to approve, reject or change a review status. Those are for the NeboAI team only.
+**Never** call review or admin tools (for example a `review` tool), and never try to approve, reject or change a review status. Only NeboAI's marketplace reviewer decides reviews.
 
 ### CLI Path (coding tools: Claude Code, Cursor, VS Code, ...)
 
@@ -973,11 +973,40 @@ If the CLI is missing, install it: `curl -fsSL https://raw.githubusercontent.com
 
 After publishing succeeds, say what actually happened:
 - Approved: "Done! Your [skill/employee/plugin/app] is published on the NeboAI marketplace."
-- Flagged: "It's submitted. The automated check wants a person on the NeboAI team to take a look before it's listed."
+- Flagged: "It's submitted. NeboAI's marketplace reviewer takes a look before it's listed."
 - Binaries scanning: "It's submitted. Your binaries are being scanned; it's listed as soon as the scan passes."
 - Give them the name, version and install code. There are no email notifications; check the status with `neboai status <id>` or `get`.
 
 If publishing fails, diagnose and fix it yourself. Don't dump error messages on non-technical users.
+
+---
+
+## Setting a Price
+
+Publishing is free. Charging is the user's choice: free, one time, every month or every year, or a setup fee plus a monthly or yearly price. Prices are in US dollars. The user keeps 75% of each sale; NeboAI keeps 25% and pays the card fees. A price is never written in a file: agent.json has no `pricing`, and SKILL.md has no `price:` line. Nothing reads them.
+
+**Inside Nebo:** use Nebo's Publish step. The user says the price in words; Nebo shows it on the listing card with what they keep, and asks before anything is sent.
+
+**Everywhere else (the NeboAI connector):**
+
+1. Read the terms first: `pricing(action: terms)` (before the item exists: the account the user publishes under) or `pricing(action: terms, id)`. They say whether payouts are set up (`payoutsReady`), where to set them up (`setupUrl`), the commission (`commissionBps`) and the lowest price (`minimumCents`).
+2. No payouts yet: say so plainly and give the link: "To sell it, set up payouts on NeboAI first: <setupUrl>." A paid price is refused until then (`payouts_required`). It can be published free meanwhile.
+3. Set the price **before you submit**, so the version is never listed free:
+   ```
+   pricing(action: set, id: "<ID>", setupPriceCents: 199)                                                 # $1.99 one time
+   pricing(action: set, id: "<ID>", recurringPriceCents: 500, billingInterval: "month")                   # $5 a month
+   pricing(action: set, id: "<ID>", setupPriceCents: 2900, recurringPriceCents: 500, billingInterval: "month")  # $29 to start, then $5 a month
+   pricing(action: clear, id: "<ID>")                                                                     # free
+   ```
+   `pricing(action: get, id)` shows the price and `publisherShareCents`, what the user keeps of each payment.
+4. A price below the lowest price is refused, and the refusal names it ($1.46 one time and $1.51 a month or year at the standard rate).
+5. Changing a price: people who already pay keep their price; new buyers pay the new one. Making it free ends the subscriptions at the end of the period they paid for.
+
+**With the CLI only:** `neboai publish` publishes free; the user sets the price on the item's page in the NeboAI Publisher (neboai.com/publisher), or with the connector's `pricing` tool.
+
+The mobile app shows free items only: a paid item is bought in Nebo on a computer, or on the web.
+
+Tell the user the price and their share in plain words: "It's $5 a month. You keep $3.75 of each payment."
 
 ---
 
@@ -1078,7 +1107,7 @@ neboai binaries list <id>      # List uploaded binaries
 neboai binaries delete <artifact-id> <binary-id>  # Delete a binary (fix duplicates)
 ```
 
-**Statuses.** An item is **Draft** (not submitted, or sent back by a reviewer), **In review** (submitted; binaries scanning or waiting for a person), or **Published** (approved and listed). A rejected version goes back to Draft with the reviewer's notes; fix it and publish again.
+**Statuses.** An item is **Draft** (not submitted, or sent back by a reviewer), **In review** (submitted; binaries scanning or waiting for NeboAI's marketplace reviewer), or **Published** (approved and listed). A rejected version goes back to Draft with the reviewer's notes; fix it and publish again.
 
 **Visibility.** `public` is shown in browse and search; `unlisted` is shown only on the publisher's storefront and collection pages; `private` is only the user (the default for a new MCP item); `loop` is shared with the user's loops. A public listing needs an approved review of the version being listed: setting `public` alone keeps the item a Draft until submit approves it.
 

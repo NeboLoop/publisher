@@ -105,9 +105,10 @@ neboai status <id>               # Draft / In review / Published
 Anyone can publish, free. Every public version is reviewed:
 
 - **Every publish queues a review**, scanned in the background, usually within a minute or two: the content of every item, and the binaries of plugins and sidecar apps. A clean scan is approved automatically. Plugins and sidecar apps need a binary for every platform they declare; a page-only app needs none.
-- **Scripts and anything executable wait for a person** on the NeboAI team, however clean the scan.
+- **Scripts and anything executable wait for NeboAI's marketplace reviewer**, however clean the scan. It approves them, rejects them with a reason, or sends them to NeboAI's owner. Nobody approves their own work.
 - **Packages exist only for an approved version**, a private item's included. Nobody but you sees or installs an item before a version of it is approved: a loop item reaches the loop's other members only as an approved version.
-- Anything the scan flags waits for a person on the NeboAI team.
+- Anything the scan flags waits for NeboAI's marketplace reviewer too.
+- **Prices** are set with the connector's `pricing` tool, in Nebo's Publish step, or on the item's page in the Publisher, never in a file. A paid price needs payouts set up first; you keep 75% of each sale.
 
 A listed item stays listed when you publish an update. More in the [publishing overview](https://neboai.com/help/publish-overview) and the [publisher skill guide](https://neboai.com/help/publisher-skill).
 
