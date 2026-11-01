@@ -1,6 +1,6 @@
 # Review Rubric
 
-What the NeboAI team looks for when a submission reaches a person (the automated scan flagged it, or a listing was reported). Only the NeboAI team reviews: publishers never approve or reject anything, including their own work. Use this list to check a listing before you submit. Pairs with `listing-quality.md` (the publisher-facing standard).
+What NeboAI's marketplace reviewer looks for when a submission reaches it (the automated scan flagged it, or a listing was reported). The reviewer approves it, rejects it with a reason, or sends it to NeboAI's owner; publishers never approve or reject anything, including their own work. Use this list to check a listing before you submit. Pairs with `listing-quality.md` (the publisher-facing standard).
 
 The bar is not "is this safe to run" — validation and binary signing already cover that. The bar is "will a first-time, non-technical user understand and trust this." That trust is the product.
 
