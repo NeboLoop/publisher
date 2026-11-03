@@ -108,6 +108,7 @@ my-plugin/
 | `events` | Vec\<PluginEventDef\> | Event definitions the plugin can emit. |
 | `dependencies` | Vec\<PluginDependency\> | Other plugins this plugin depends on. |
 | `triggers` | Vec\<String\> | Trigger phrases that activate the plugin. |
+| `reads` | Vec\<String\> | The commands that only read: each entry is a command's words, then the flags it may carry (`"invoice get --realm-id --json"`). In Ask mode these run without asking; every other call asks. See building-plugins.md, Declaring Reads. |
 | `signingKeyId` | String | ID of the ED25519 signing key used to verify binaries. |
 | `envVar` | String | Environment variable name for the binary path (e.g., `"GWS_BIN"`). |
 | `setup` | ArtifactSetup | Post-install setup instructions or steps. |
@@ -153,12 +154,11 @@ Typed, schema-validated tools the agent can call:
   "description": "Triage Gmail inbox",
   "command": "gmail +triage",
   "inputSchema": { "type": "object", "properties": {} },
-  "approval": true,
   "timeoutSeconds": 120
 }
 ```
 
-- `approval` defaults to `true`. Set `false` explicitly for read-only tools.
+- Declare the commands that only read in the manifest's top-level `reads` (see Declaring Reads); in Ask mode every other call asks the owner (see building-plugins.md).
 - `timeoutSeconds` defaults to `120`. Override as needed.
 
 ### Hooks

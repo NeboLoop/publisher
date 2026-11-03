@@ -377,12 +377,11 @@ The binary receives CLI args from the `command` field in each capability definit
     },
     "required": ["param"]
   },
-  "approval": true,
   "timeoutSeconds": 120
 }
 ```
 
-- `approval` defaults to **`true`** — set `false` explicitly for read-only tools
+- Declare the commands that only read in the manifest's top-level `reads` (see Declaring Reads); in Ask mode every other call asks the owner
 - `timeoutSeconds` defaults to **120**
 - Every property needs a `description`
 - Use `enum` for fixed value sets
