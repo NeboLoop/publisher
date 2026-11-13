@@ -24,6 +24,8 @@ permissions:
 jobs:
   check-version:
     runs-on: [self-hosted, Linux, ARM64, neboloop]
+    outputs:
+      platforms: ${{ steps.platforms.outputs.include }}
     steps:
       - uses: actions/checkout@v4
       # node reads package.json's version; the runner has no system node.
@@ -39,6 +41,33 @@ jobs:
             echo "::error title=Version mismatch::tag $GITHUB_REF_NAME, cli/Cargo.toml $cargo_v, package.json $npm_v. Bump both to $tag and tag again."
             exit 1
           fi
+      # The build legs. Windows builds only while the repo variable
+      # WINDOWS_BUILD_ENABLED is "true" (the switch nebo and nebo-link use).
+      # Off, there is no Windows leg, nothing waits on the Windows box, and the
+      # release ships without neboai-windows-amd64.exe. Turning it back on:
+      #   gh variable set WINDOWS_BUILD_ENABLED --body true -R NeboLoop/publisher
+      - name: Platforms in this release
+        id: platforms
+        env:
+          WINDOWS: ${{ vars.WINDOWS_BUILD_ENABLED == 'true' }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os
+          mac = ["self-hosted", "macOS", "stadium-mac"]
+          legs = [
+              # Self-hosted runners, the same ones NeboLoop/nebo releases on.
+              {"target": "aarch64-apple-darwin", "runner": mac, "platform": "darwin-arm64"},
+              {"target": "x86_64-apple-darwin", "runner": mac, "platform": "darwin-amd64"},
+              {"target": "aarch64-unknown-linux-musl", "runner": ["self-hosted", "Linux", "ARM64", "neboloop"], "platform": "linux-arm64"},
+              # linux-amd64 on a DigitalOcean droplet booted for this run
+              # (linux-amd64-runner below) and deleted after it.
+              {"target": "x86_64-unknown-linux-musl", "runner": ["self-hosted", "Linux", "X64", f"publisher-amd64-{os.environ['GITHUB_RUN_ID']}"], "platform": "linux-amd64"},
+          ]
+          if os.environ["WINDOWS"] == "true":
+              legs.append({"target": "x86_64-pc-windows-msvc", "runner": ["self-hosted", "Windows", "X64", "stadium-win"], "platform": "windows-amd64", "windows": True})
+          print("include=" + json.dumps(legs))
+          EOF
+          [ "$WINDOWS" = true ] || echo "::notice::This release ships macOS and Linux. Windows is off (repo variable WINDOWS_BUILD_ENABLED is not \"true\")."
 
   # ─── x86 runner: a DigitalOcean droplet that exists only for this run ───
   # GitHub-hosted runners are never used (the org's Actions budget is spent).
@@ -128,29 +157,10 @@ jobs:
     needs: [check-version, linux-amd64-runner]
     strategy:
       matrix:
-        include:
-          # Self-hosted runners, the same ones NeboLoop/nebo releases on.
-          - target: aarch64-apple-darwin
-            runner: '["self-hosted","macOS","stadium-mac"]'
-            platform: darwin-arm64
-          - target: x86_64-apple-darwin
-            runner: '["self-hosted","macOS","stadium-mac"]'
-            platform: darwin-amd64
-          - target: aarch64-unknown-linux-musl
-            runner: '["self-hosted","Linux","ARM64","neboloop"]'
-            platform: linux-arm64
-          # linux-amd64 on a DigitalOcean droplet booted for this run
-          # (linux-amd64-runner below) and deleted after it: there is no self-hosted
-          # x86 Linux machine, and GitHub-hosted runners are never used.
-          - target: x86_64-unknown-linux-musl
-            runner: '["self-hosted","Linux","X64","publisher-amd64-${{ github.run_id }}"]'
-            platform: linux-amd64
-          - target: x86_64-pc-windows-msvc
-            runner: '["self-hosted","Windows","X64","stadium-win"]'
-            platform: windows-amd64
-            windows: true
+        # The legs come from check-version ("Platforms in this release").
+        include: ${{ fromJSON(needs.check-version.outputs.platforms) }}
 
-    runs-on: ${{ fromJSON(matrix.runner) }}
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - uses: actions/checkout@v4
@@ -269,14 +279,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: |
-            dist/neboai-darwin-arm64
-            dist/neboai-darwin-amd64
-            dist/neboai-linux-arm64
-            dist/neboai-linux-amd64
-            dist/neboai-windows-amd64.exe
-            dist/neboai-skill.tar.gz
-            dist/SHA256SUMS
+          # Exactly what was built (the Windows binary only while Windows is
+          # on), the skill package and the checksums of those files.
+          files: dist/*
+          fail_on_unmatched_files: true
 
       - name: Keep checksums for the Homebrew job
         uses: actions/upload-artifact@v4
