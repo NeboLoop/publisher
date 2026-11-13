@@ -26,7 +26,7 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, neboloop]
     steps:
       - uses: actions/checkout@v4
-      # node reads package.json's version; the stadium VM has no system node.
+      # node reads package.json's version; the runner has no system node.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -42,14 +42,14 @@ jobs:
 
   # ─── x86 runner: a DigitalOcean droplet that exists only for this run ───
   # GitHub-hosted runners are never used (the org's Actions budget is spent).
-  # This job only calls doctl and gh, on the stadium orchestration runners;
-  # the droplet boots from the nebo-runner-amd64-base snapshot with a
+  # This job only calls doctl and gh, on the orchestration runners;
+  # the droplet boots from a prebuilt snapshot with a
   # just-in-time registration good for ONE job, and the -down job deletes it.
   linux-amd64-runner:
     needs: check-version
     runs-on: [self-hosted, Linux, ARM64, neboloop-orch] # orchestration only
     steps:
-      # Install only. Up to four jobs share this VM's HOME, and `doctl auth
+      # Install only. Up to four jobs share this runner's HOME, and `doctl auth
       # init` in each rewrote one shared config file under the others. Every
       # doctl call takes the token from the environment and a config dir of
       # its own job.
@@ -95,7 +95,7 @@ jobs:
           sed -i "s|__JIT__|$JIT|" "$ud"
           # --ssh-keys: with no key DigitalOcean emails the owner a root
           # password for every droplet. Nobody logs in.
-          # nyc3 capacity comes and goes per size (a 422 "not available");
+          # Region capacity comes and goes per size (a 422 "not available");
           # any other error is fatal.
           id=""
           for size in s-8vcpu-16gb s-8vcpu-16gb-amd s-8vcpu-16gb-intel s-4vcpu-16gb-320gb-intel; do
@@ -129,7 +129,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # House runners, the same ones NeboLoop/nebo releases on.
+          # Self-hosted runners, the same ones NeboLoop/nebo releases on.
           - target: aarch64-apple-darwin
             runner: '["self-hosted","macOS","stadium-mac"]'
             platform: darwin-arm64
@@ -140,7 +140,7 @@ jobs:
             runner: '["self-hosted","Linux","ARM64","neboloop"]'
             platform: linux-arm64
           # linux-amd64 on a DigitalOcean droplet booted for this run
-          # (linux-amd64-runner below) and deleted after it: there is no house
+          # (linux-amd64-runner below) and deleted after it: there is no self-hosted
           # x86 Linux machine, and GitHub-hosted runners are never used.
           - target: x86_64-unknown-linux-musl
             runner: '["self-hosted","Linux","X64","publisher-amd64-${{ github.run_id }}"]'
@@ -154,7 +154,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      # The house Windows runner runs as NETWORK SERVICE under a Restricted
+      # The self-hosted Windows runner runs as NETWORK SERVICE under a Restricted
       # execution policy, with Git's bash off PATH. This puts bash and pwsh
       # on the job's PATH without admin rights (same step as nebo's release).
       - name: Runner prep (no admin needed)
