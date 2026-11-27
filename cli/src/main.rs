@@ -42,9 +42,10 @@ enum Commands {
         /// Marketplace visibility. Every publish submits the version for review,
         /// and it installs once approved: "public" is then listed; "private" is
         /// for your own bots; "loop" reaches your loops' other members only as
-        /// an approved version.
-        #[arg(long, value_parser = ["public", "private", "loop"], default_value = "public")]
-        visibility: String,
+        /// an approved version. Left out, a new item is public and an item you
+        /// already published keeps its visibility.
+        #[arg(long, value_parser = ["public", "private", "loop"])]
+        visibility: Option<String>,
         /// Accepted for compatibility; publishing is re-runnable, so running
         /// the same command again picks up where it left off.
         #[arg(long, hide = true)]
@@ -109,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
             visibility,
             resume: _,
         } => {
-            publish::run(&path, r#type.as_deref(), &visibility).await?;
+            publish::run(&path, r#type.as_deref(), visibility.as_deref()).await?;
         }
         Commands::List => {
             api::list_artifacts().await?;

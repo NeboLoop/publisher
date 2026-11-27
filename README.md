@@ -98,7 +98,7 @@ neboai list                      # everything you've published, with its status
 neboai status <id>               # Draft / In review / Published
 ```
 
-`neboai publish ./dir --visibility private` (or `loop`) saves an item without listing it, so it isn't reviewed. Publishing a directory again updates the item to the version in its files. To publish under a team's account you belong to, set `NEBOAI_ACCOUNT=<team-handle>`.
+`neboai publish ./dir --visibility private` (or `loop`) saves an item without listing it, so it isn't reviewed. Publishing a directory again updates the item to the version in its files, and keeps its visibility unless you pass `--visibility`. To publish under a team's account you belong to, set `NEBOAI_ACCOUNT=<team-handle>`.
 
 ## Review
 

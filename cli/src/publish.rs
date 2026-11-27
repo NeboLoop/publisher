@@ -37,7 +37,7 @@ const PLATFORMS: &[&str] = &[
     "windows-arm64",
 ];
 
-pub async fn run(path: &str, type_override: Option<&str>, visibility: &str) -> Result<()> {
+pub async fn run(path: &str, type_override: Option<&str>, visibility: Option<&str>) -> Result<()> {
     let dir = Path::new(path);
     if !dir.is_dir() {
         bail!("Path is not a directory: {path}");
@@ -77,9 +77,14 @@ pub async fn run(path: &str, type_override: Option<&str>, visibility: &str) -> R
 
 /// What `upsert` did: the item's ID and, for an item that already existed,
 /// its status before this publish.
+/// The visibility of an item published for the first time without one.
+const NEW_VISIBILITY: &str = "public";
+
 struct Upserted {
     id: String,
     previous_status: Option<String>,
+    /// The visibility the item has after this publish.
+    visibility: String,
 }
 
 /// Create the item, or — when you already published one with this name and
@@ -92,7 +97,7 @@ async fn upsert(
     category: &str,
     description: &str,
     version: &str,
-    visibility: &str,
+    visibility: Option<&str>,
     manifest: &str,
 ) -> Result<Upserted> {
     // Every publish submits (finalize), so the hub's submit rule applies to
@@ -105,11 +110,12 @@ async fn upsert(
             println!("Updating {artifact_type}: {name} -> v{version}");
             // The version is set before any upload: uploads are recorded
             // under the item's current version.
-            api::update_manifest(&existing.id, manifest, version, description).await?;
+            api::update_manifest(&existing.id, manifest, version, description, visibility).await?;
             println!("  Artifact ID: {}", existing.id);
             Ok(Upserted {
                 id: existing.id,
                 previous_status: Some(existing.status),
+                visibility: visibility.map_or(existing.visibility, str::to_string),
             })
         }
         None => {
@@ -121,7 +127,7 @@ async fn upsert(
                 category,
                 description,
                 version,
-                visibility,
+                visibility.unwrap_or(NEW_VISIBILITY),
                 manifest,
             )
             .await?;
@@ -129,12 +135,14 @@ async fn upsert(
             Ok(Upserted {
                 id,
                 previous_status: None,
+                visibility: visibility.unwrap_or(NEW_VISIBILITY).to_string(),
             })
         }
     }
 }
 
-async fn publish_collection(dir: &Path, account: &api::Account, visibility: &str) -> Result<()> {
+async fn publish_collection(dir: &Path, account: &api::Account, visibility: Option<&str>) -> Result<()> {
+    let visibility = visibility.unwrap_or(NEW_VISIBILITY);
     // A collection bundles existing artifacts. collection.json carries the
     // metadata plus an `items` array of {targetId, targetType}.
     let raw = read_file(dir, "collection.json")?;
@@ -196,7 +204,7 @@ async fn publish_collection(dir: &Path, account: &api::Account, visibility: &str
     Ok(())
 }
 
-async fn publish_connector(dir: &Path, account_id: &str, visibility: &str) -> Result<()> {
+async fn publish_connector(dir: &Path, account_id: &str, visibility: Option<&str>) -> Result<()> {
     // A connector's manifest IS its MCP config: connector.json is the standard
     // `mcpServers` block (it may also carry name/description/category/version
     // metadata alongside — the server ignores the extra keys).
@@ -269,14 +277,14 @@ async fn publish_connector(dir: &Path, account_id: &str, visibility: &str) -> Re
         &name,
         "Connector",
         &version,
-        visibility,
+        &item.visibility,
         item.previous_status.as_deref(),
     )
     .await?;
     Ok(())
 }
 
-async fn publish_skill(dir: &Path, account_id: &str, visibility: &str) -> Result<()> {
+async fn publish_skill(dir: &Path, account_id: &str, visibility: Option<&str>) -> Result<()> {
     let skill_md = read_file(dir, "SKILL.md")?;
     let fm = extract_frontmatter_fields(&skill_md)?;
     let name = fm.name;
@@ -311,14 +319,14 @@ async fn publish_skill(dir: &Path, account_id: &str, visibility: &str) -> Result
         &name,
         "Skill",
         &version,
-        visibility,
+        &item.visibility,
         item.previous_status.as_deref(),
     )
     .await?;
     Ok(())
 }
 
-async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Result<()> {
+async fn publish_plugin(dir: &Path, account_id: &str, visibility: Option<&str>) -> Result<()> {
     let plugin_md = read_file(dir, "PLUGIN.md")?;
     let plugin_json_path = dir.join("plugin.json");
     let plugin_json: serde_json::Value =
@@ -416,14 +424,14 @@ async fn publish_plugin(dir: &Path, account_id: &str, visibility: &str) -> Resul
         &name,
         "Plugin",
         &version,
-        visibility,
+        &item.visibility,
         item.previous_status.as_deref(),
     )
     .await?;
     Ok(())
 }
 
-async fn publish_agent(dir: &Path, account_id: &str, visibility: &str) -> Result<()> {
+async fn publish_agent(dir: &Path, account_id: &str, visibility: Option<&str>) -> Result<()> {
     let agent_md = read_file(dir, "AGENT.md")?;
     let agent_json_path = dir.join("agent.json");
     let fm = extract_frontmatter_fields(&agent_md)?;
@@ -462,14 +470,14 @@ async fn publish_agent(dir: &Path, account_id: &str, visibility: &str) -> Result
         &name,
         "Agent",
         &version,
-        visibility,
+        &item.visibility,
         item.previous_status.as_deref(),
     )
     .await?;
     Ok(())
 }
 
-async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<()> {
+async fn publish_app(dir: &Path, account_id: &str, visibility: Option<&str>) -> Result<()> {
     let agent_md = read_file(dir, "AGENT.md")?;
     let manifest: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json"))?)?;
@@ -565,7 +573,7 @@ async fn publish_app(dir: &Path, account_id: &str, visibility: &str) -> Result<(
         &name,
         "App",
         &version,
-        visibility,
+        &item.visibility,
         item.previous_status.as_deref(),
     )
     .await?;
