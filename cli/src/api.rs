@@ -211,6 +211,7 @@ pub async fn resolve_account(slug: Option<&str>) -> Result<Account> {
 pub struct Existing {
     pub id: String,
     pub status: String,
+    pub visibility: String,
 }
 
 /// Resolve an existing artifact's ID by slug/name + type. Publishing an
@@ -246,9 +247,11 @@ pub async fn find_artifact(name: &str, artifact_type: &str) -> Result<Option<Exi
         if ty == Some(artifact_type) && (slug == Some(name) || app_name == Some(name)) {
             if let Some(id) = app.get("id").and_then(|v| v.as_str()) {
                 let status = app.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                let visibility = app.get("visibility").and_then(|v| v.as_str()).unwrap_or("");
                 return Ok(Some(Existing {
                     id: id.to_string(),
                     status: status.to_string(),
+                    visibility: visibility.to_string(),
                 }));
             }
         }
@@ -303,7 +306,8 @@ pub async fn create_artifact(
     Ok(created.id)
 }
 
-/// Update an existing artifact's manifest and (when provided) its version.
+/// Update an existing artifact's manifest and (when provided) its version
+/// and visibility; a visibility left out keeps the item's own.
 /// The version MUST be updated before uploading a new version's binaries:
 /// the binaries endpoint records uploads under the artifact row's CURRENT
 /// version, so uploading first mislabels the new bytes as the old version.
@@ -312,15 +316,19 @@ pub async fn update_manifest(
     manifest_content: &str,
     version: &str,
     description: &str,
+    visibility: Option<&str>,
 ) -> Result<()> {
     let (client, token) = authenticated_client().await?;
     let base = base_url();
 
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "manifestContent": manifest_content,
         "version": version,
         "description": description,
     });
+    if let Some(visibility) = visibility {
+        body["visibility"] = serde_json::Value::String(visibility.to_string());
+    }
 
     let resp = client
         .put(format!("{base}/developer/apps/{id}"))
