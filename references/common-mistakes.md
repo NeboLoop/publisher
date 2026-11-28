@@ -7,7 +7,7 @@
 | Upload `manifest.json` as `config` | Overwrites agent.json in `type_config` | Only upload `agent.json` as `config` |
 | Template vars in plugin.json | Users see `{{gcp_project}}` errors | Hardcode all values |
 | Trailing comma in JSON | Upload rejected: "config file must be valid JSON" | Validate: `python3 -c "import json; json.load(open('file.json'))"` |
-| HTTP/2 with large uploads | curl exit code 92, stream error | Always use `--http1.1` |
+| HTTP/2 with large uploads | Exit code 92 from curl, stream error | Add `--http1.1` to the upload command |
 | Expired upload token | 401 Unauthorized | Tokens expire in 5 min. Get a fresh one. |
 | Missing `config` on agent upload | 400: "config file is required for agents" | Attach `config=@agent.json` (the agent branch reads only `config` — no `platform`/`file`) |
 | Sending `platform`/`file` on an agent upload | Ignored — agent uploads read only `config` | Send `config=@agent.json` alone |
