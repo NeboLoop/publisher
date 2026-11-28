@@ -16,7 +16,7 @@ triggers:
   - nebo marketplace
 metadata:
   author: neboai
-  version: "0.2.3"
+  version: "0.3.2"
 ---
 # NeboAI — From Idea to Marketplace
 
@@ -967,7 +967,7 @@ The CLI:
 
 **Listing:** the CLI also sets the marketplace listing automatically — a clean Title Case display name (from the frontmatter `title:`, else derived from the lowercase id) and, if a `LISTING.md` is present, the long "What it does" description. See the Marketplace Listing section.
 
-If the CLI is missing, install it with `pnpm add -g @neboai/publisher` or `npm install -g @neboai/publisher`, or with Homebrew (`brew tap NeboLoop/tap`, `brew trust neboloop/tap`, then `brew install neboai`). Without Node.js or Homebrew, run the macOS and Linux install script shown in the README of github.com/NeboLoop/publisher (Windows: `irm https://raw.githubusercontent.com/NeboLoop/publisher/main/install.ps1 | iex`). To sign in ahead of time: `neboai auth login`; `neboai auth status` shows the signed-in handle.
+If the CLI is missing, install it: `curl -fsSL https://raw.githubusercontent.com/NeboLoop/publisher/main/install.sh | bash` (Windows: `irm https://raw.githubusercontent.com/NeboLoop/publisher/main/install.ps1 | iex`). To sign in ahead of time: `neboai auth login`; `neboai auth status` shows the signed-in handle.
 
 ### What to Tell the User
 
