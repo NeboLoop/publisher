@@ -12,11 +12,11 @@ triggers:
   - I have an idea
   - sell on nebo
   - neboai
-  - neboloop
+  - neboai marketplace
   - nebo marketplace
 metadata:
   author: neboai
-  version: "0.3.1"
+  version: "0.3.2"
 ---
 # NeboAI — From Idea to Marketplace
 
@@ -896,7 +896,7 @@ Detect your environment and use the appropriate path. **Never ask the user to ch
 ### Detecting Your Path
 
 Check your available tools:
-- If the NeboAI MCP connector's tools are in your tool list → **use the MCP path.** They are named `skill`, `agent`, `plugin`, `connector`, `collection`, `developer`, `marketplace`, usually with a connector prefix such as `mcp__claude_ai_NeboAI__skill` (older installs: `mcp__claude_ai_NeboLoop__skill`, `mcp__levee__skill`).
+- If the NeboAI MCP connector's tools are in your tool list → **use the MCP path.** They are named `skill`, `agent`, `plugin`, `connector`, `collection`, `developer`, `marketplace`, usually with a connector prefix such as `mcp__claude_ai_NeboAI__skill` (older installs: `mcp__levee__skill`).
 - Otherwise → **use the CLI path** (`neboai publish <directory>`).
 
 Use `ToolSearch` to discover the connector's tools if unsure: search for "neboai".
@@ -927,7 +927,7 @@ A description of **10–500 characters** is required to submit.
 - App, page-only (no sidecar): `agent(action: bundle-token, id)` → curl with a `.zip` of `AGENT.md`, `agent.json`, `manifest.json`, `ui/` and any `skills/`. The hub stores `ui/` as the app's page, keeps manifest.json as its manifest, and rebuilds the installable package. Check the response's skipped count: a file over 10 MB or of a disallowed type is skipped.
 - App with a sidecar: `agent(action: binary-token, id)` → curl with `file=@<sidecar>`, `platform=<platform>`, and `ui=@ui.tar.gz` (plus `config=@agent.json`) on the first platform.
 
-Upload tokens last **5 minutes** and only open that one item's uploads. Get a fresh one if it expires. The server reads only these multipart fields: `file` (binary), `config` (agent.json / plugin.json), `skills` (plugin skills tarball), `ui` (app frontend tarball), `platform`. The manifest is set with `manifestContent` on create/update, never uploaded. Use `curl --http1.1` for large uploads.
+Upload tokens last **5 minutes** and only open that one item's uploads. Get a fresh one if it expires. The server reads only these multipart fields: `file` (binary), `config` (agent.json / plugin.json), `skills` (plugin skills tarball), `ui` (app frontend tarball), `platform`. The manifest is set with `manifestContent` on create/update, never uploaded. For large uploads, add `--http1.1` to the curl command.
 
 **Step 3: Make it public and submit**
 
